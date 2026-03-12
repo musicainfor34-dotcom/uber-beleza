@@ -26,7 +26,6 @@ export default function ClienteDashboard() {
 
   useEffect(() => {
     checkUser()
-    // Detectar se é mobile
     const checkIsMobile = () => setIsMobile(window.innerWidth < 768)
     checkIsMobile()
     window.addEventListener('resize', checkIsMobile)
@@ -48,7 +47,6 @@ export default function ClienteDashboard() {
     router.push('/login')
   }
 
-  // Os 4 serviços com cores e ícones específicos
   const servicos = [
     {
       id: 'cabelo',
@@ -96,7 +94,6 @@ export default function ClienteDashboard() {
     }
   ]
 
-  // Profissionais mockados por serviço
   const profissionaisPorServico: Record<string, any[]> = {
     'cabelo': [
       { id: 1, nome: 'Sandra Lima', avaliacao: 4.9, preco: 'R$ 80', foto: 'https://images.unsplash.com/photo-1594744803329-e58b31de8bf5?w=200&h=200&fit=crop', online: true },
@@ -131,7 +128,6 @@ export default function ClienteDashboard() {
     <div className="min-h-screen bg-slate-900 md:bg-gray-50">
       {/* ===== MOBILE LAYOUT (< md) ===== */}
       <div className="md:hidden flex flex-col min-h-screen pb-20">
-        {/* Header Mobile */}
         <header className="p-6 flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-white">Serviços</h1>
@@ -149,7 +145,6 @@ export default function ClienteDashboard() {
           </div>
         </header>
 
-        {/* Grid 2x2 Mobile */}
         {!servicoSelecionado ? (
           <main className="flex-1 px-4 py-2">
             <div className="grid grid-cols-2 gap-4">
@@ -171,9 +166,7 @@ export default function ClienteDashboard() {
             </div>
           </main>
         ) : (
-          /* Lista de Profissionais Mobile */
           <main className="flex-1 px-4 py-2">
-            {/* Voltar */}
             <button 
               onClick={() => setServicoSelecionado(null)}
               className="flex items-center gap-2 text-slate-400 hover:text-white mb-4"
@@ -182,7 +175,6 @@ export default function ClienteDashboard() {
               <span>Voltar</span>
             </button>
 
-            {/* Header do serviço */}
             {(() => {
               const servico = servicos.find(s => s.id === servicoSelecionado)
               if (!servico) return null
@@ -201,7 +193,6 @@ export default function ClienteDashboard() {
               )
             })()}
 
-            {/* Lista de Profissionais */}
             <div className="space-y-3">
               {profissionaisAtuais.map((prof) => (
                 <div 
@@ -239,9 +230,7 @@ export default function ClienteDashboard() {
 
       {/* ===== DESKTOP LAYOUT (>= md) ===== */}
       <div className="hidden md:flex h-screen">
-        {/* Sidebar Esquerda - Lista de Serviços */}
         <aside className="w-96 bg-white border-r border-gray-200 flex flex-col">
-          {/* Header */}
           <div className="p-6 border-b border-gray-100">
             <div className="flex items-center justify-between mb-4">
               <div>
@@ -261,7 +250,6 @@ export default function ClienteDashboard() {
             </div>
           </div>
 
-          {/* Lista de Serviços */}
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
             {servicos.map((servico) => (
               <button
@@ -274,7 +262,6 @@ export default function ClienteDashboard() {
                 }`}
               >
                 <div className="flex items-center gap-4">
-                  {/* Faixa de cor lateral */}
                   <div className={`w-1 h-12 rounded-full bg-gradient-to-b ${servico.cor}`}></div>
                   
                   <div className={`w-12 h-12 rounded-xl ${servico.bgIcon} bg-opacity-10 flex items-center justify-center`}>
@@ -300,10 +287,8 @@ export default function ClienteDashboard() {
           </div>
         </aside>
 
-        {/* Área Direita - Conteúdo */}
         <main className="flex-1 bg-gray-50 p-8 overflow-y-auto">
           {!servicoSelecionado ? (
-            // Estado vazio - nenhum serviço selecionado
             <div className="h-full flex flex-col items-center justify-center text-center">
               <div className="w-24 h-24 bg-gray-200 rounded-full flex items-center justify-center mb-4">
                 <Scissors className="w-10 h-10 text-gray-400" />
@@ -314,7 +299,6 @@ export default function ClienteDashboard() {
               </p>
             </div>
           ) : (
-            // Profissionais do serviço selecionado
             <div className="max-w-4xl">
               {(() => {
                 const servico = servicos.find(s => s.id === servicoSelecionado)
@@ -322,7 +306,7 @@ export default function ClienteDashboard() {
                 return (
                   <div className="mb-8">
                     <div className="flex items-center gap-4 mb-6">
-                      <div className={`w-16 h-16 rounded-2xl ${servico.bgCor} bg-opacity-10 flex items-center justify-center`}>
+                      <div className={`w-16 h-16 rounded-2xl ${servico.bgIcon} bg-opacity-10 flex items-center justify-center`}>
                         <servico.icon className={`w-8 h-8 ${servico.textColor}`} />
                       </div>
                       <div>
@@ -331,7 +315,6 @@ export default function ClienteDashboard() {
                       </div>
                     </div>
 
-                    {/* Grid de Profissionais */}
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                       {profissionaisAtuais.map((prof) => (
                         <div 
