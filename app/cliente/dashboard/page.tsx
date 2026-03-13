@@ -11,7 +11,6 @@ import {
   Star,
   MapPin,
   LogOut,
-  User,
   ArrowRight,
   ChevronRight,
   Clock
@@ -22,14 +21,9 @@ export default function ClienteDashboard() {
   const [user, setUser] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [servicoSelecionado, setServicoSelecionado] = useState<string | null>(null)
-  const [isMobile, setIsMobile] = useState(false)
 
   useEffect(() => {
     checkUser()
-    const checkIsMobile = () => setIsMobile(window.innerWidth < 768)
-    checkIsMobile()
-    window.addEventListener('resize', checkIsMobile)
-    return () => window.removeEventListener('resize', checkIsMobile)
   }, [])
 
   async function checkUser() {
