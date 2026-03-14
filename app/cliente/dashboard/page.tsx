@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
+import { createClient } from '@supabase/supabase-js'
 import { 
   Scissors, 
   Paintbrush,
@@ -13,18 +13,32 @@ import {
   LogOut,
   ArrowRight,
   ChevronRight,
-  Clock
+  Clock,
+  Loader2
 } from 'lucide-react'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
 
 export default function ClienteDashboard() {
   const router = useRouter()
   const [user, setUser] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [servicoSelecionado, setServicoSelecionado] = useState<string | null>(null)
+  const [profissionais, setProfissionais] = useState<any[]>([])
+  const [loadingProfissionais, setLoadingProfissionais] = useState(false)
 
   useEffect(() => {
     checkUser()
   }, [])
+
+  useEffect(() => {
+    if (servicoSelecionado) {
+      buscarProfissionais(servicoSelecionado)
+    }
+  }, [servicoSelecionado])
 
   async function checkUser() {
     const { data: { session } } = await supabase.auth.getSession()
@@ -36,6 +50,34 @@ export default function ClienteDashboard() {
     setLoading(false)
   }
 
+  async function buscarProfissionais(especialidade: string) {
+    setLoadingProfissionais(true)
+    try {
+      // Buscar profissionais do Supabase filtrando por especialidade
+      const { data, error } = await supabase
+        .from('professionals')
+        .select('*')
+        .eq('ativo', true)
+        .order('created_at', { ascending: false })
+
+      if (error) throw error
+
+      // Filtrar por especialidade (como é um array, filtramos no JS)
+      const filtrados = (data || []).filter((prof: any) => {
+        const especs = prof.especialidade || []
+        return especs.some((esp: string) => 
+          esp.toLowerCase() === especialidade.toLowerCase()
+        )
+      })
+
+      setProfissionais(filtrados)
+    } catch (error) {
+      console.error('Erro ao buscar profissionais:', error)
+    } finally {
+      setLoadingProfissionais(false)
+    }
+  }
+
   async function handleLogout() {
     await supabase.auth.signOut()
     router.push('/login')
@@ -43,72 +85,48 @@ export default function ClienteDashboard() {
 
   const servicos = [
     {
-      id: 'cabelo',
+      id: 'Cabelo',
       nome: 'Cabelo',
       descricao: 'Corte, coloração, hidratação',
       cor: 'from-yellow-400 to-orange-500',
       bgIcon: 'bg-yellow-400',
       textColor: 'text-yellow-400',
       icon: Scissors,
-      profissionais: 8,
       preco: 'R$ 50'
     },
     {
-      id: 'maquiagem',
+      id: 'Maquiagem',
       nome: 'Maquiagem',
       descricao: 'Social, festa e noiva',
       cor: 'from-pink-400 to-rose-500',
       bgIcon: 'bg-pink-400',
       textColor: 'text-pink-400',
       icon: Paintbrush,
-      profissionais: 6,
       preco: 'R$ 120'
     },
     {
-      id: 'manicure',
+      id: 'Manicure',
       nome: 'Manicure',
       descricao: 'Esmaltação e nail art',
       cor: 'from-red-400 to-pink-500',
       bgIcon: 'bg-red-400',
       textColor: 'text-red-400',
       icon: Sparkles,
-      profissionais: 10,
       preco: 'R$ 35'
     },
     {
-      id: 'pedicure',
+      id: 'Pedicure',
       nome: 'Pedicure',
       descricao: 'Spa dos pés e cuidados',
       cor: 'from-purple-400 to-violet-500',
       bgIcon: 'bg-purple-400',
       textColor: 'text-purple-400',
       icon: Gem,
-      profissionais: 8,
       preco: 'R$ 40'
     }
   ]
 
-  const profissionaisPorServico: Record<string, any[]> = {
-    'cabelo': [
-      { id: 1, nome: 'Sandra Lima', avaliacao: 4.9, preco: 'R$ 80', foto: 'https://images.unsplash.com/photo-1594744803329-e58b31de8bf5?w=200&h=200&fit=crop', online: true },
-      { id: 2, nome: 'Carlos Mendes', avaliacao: 4.8, preco: 'R$ 60', foto: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&h=200&fit=crop', online: true },
-      { id: 3, nome: 'Ana Paula', avaliacao: 5.0, preco: 'R$ 100', foto: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200&h=200&fit=crop', online: false },
-    ],
-    'maquiagem': [
-      { id: 4, nome: 'Helena Costa', avaliacao: 4.9, preco: 'R$ 150', foto: 'https://images.unsplash.com/photo-1580618672591-eb180b1a973f?w=200&h=200&fit=crop', online: true },
-      { id: 5, nome: 'Julia Santos', avaliacao: 4.8, preco: 'R$ 120', foto: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=200&h=200&fit=crop', online: true },
-    ],
-    'manicure': [
-      { id: 6, nome: 'Fernanda Dias', avaliacao: 4.9, preco: 'R$ 40', foto: 'https://images.unsplash.com/photo-1567532939604-b6b5b0db2604?w=200&h=200&fit=crop', online: true },
-      { id: 7, nome: 'Patricia Lima', avaliacao: 4.7, preco: 'R$ 35', foto: 'https://images.unsplash.com/photo-1487412720507-e7ab37603c6f?w=200&h=200&fit=crop', online: true },
-    ],
-    'pedicure': [
-      { id: 8, nome: 'Roberta Souza', avaliacao: 4.8, preco: 'R$ 45', foto: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=200&h=200&fit=crop', online: false },
-      { id: 9, nome: 'Daniela Rocha', avaliacao: 4.9, preco: 'R$ 50', foto: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?w=200&h=200&fit=crop', online: true },
-    ]
-  }
-
-  const profissionaisAtuais = servicoSelecionado ? (profissionaisPorServico[servicoSelecionado] || []) : []
+  const servicoAtual = servicos.find(s => s.id === servicoSelecionado)
 
   if (loading) {
     return (
@@ -153,7 +171,7 @@ export default function ClienteDashboard() {
                   </div>
                   <div className="text-center">
                     <h3 className="text-white font-bold text-lg">{servico.nome}</h3>
-                    <p className="text-slate-400 text-xs mt-1">{servico.profissionais} profissionais</p>
+                    <p className="text-slate-400 text-xs mt-1">Ver profissionais</p>
                   </div>
                 </button>
               ))}
@@ -169,55 +187,68 @@ export default function ClienteDashboard() {
               <span>Voltar</span>
             </button>
 
-            {(() => {
-              const servico = servicos.find(s => s.id === servicoSelecionado)
-              if (!servico) return null
-              return (
-                <div className="bg-slate-800 rounded-2xl p-4 mb-6 border border-slate-700">
-                  <div className="flex items-center gap-4">
-                    <div className={`w-14 h-14 rounded-xl ${servico.bgIcon} bg-opacity-20 flex items-center justify-center`}>
-                      <servico.icon className={`w-7 h-7 ${servico.textColor}`} />
-                    </div>
-                    <div>
-                      <h2 className="text-xl font-bold text-white">{servico.nome}</h2>
-                      <p className="text-slate-400 text-sm">{servico.profissionais} disponíveis</p>
-                    </div>
+            {servicoAtual && (
+              <div className="bg-slate-800 rounded-2xl p-4 mb-6 border border-slate-700">
+                <div className="flex items-center gap-4">
+                  <div className={`w-14 h-14 rounded-xl ${servicoAtual.bgIcon} bg-opacity-20 flex items-center justify-center`}>
+                    <servicoAtual.icon className={`w-7 h-7 ${servicoAtual.textColor}`} />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-bold text-white">{servicoAtual.nome}</h2>
+                    <p className="text-slate-400 text-sm">
+                      {loadingProfissionais ? 'Carregando...' : `${profissionais.length} profissionais`}
+                    </p>
                   </div>
                 </div>
-              )
-            })()}
+              </div>
+            )}
 
-            <div className="space-y-3">
-              {profissionaisAtuais.map((prof) => (
-                <div 
-                  key={prof.id}
-                  onClick={() => router.push(`/agendar/${prof.id}?servico=${servicoSelecionado}`)}
-                  className="bg-slate-800 rounded-2xl p-4 border border-slate-700 active:scale-95 transition-transform"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="relative">
-                      <img src={prof.foto} alt={prof.nome} className="w-14 h-14 rounded-xl object-cover" />
-                      {prof.online && (
-                        <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-green-500 border-2 border-slate-800 rounded-full"></div>
-                      )}
-                    </div>
-                    <div className="flex-1">
-                      <h4 className="font-bold text-white">{prof.nome}</h4>
-                      <div className="flex items-center gap-1 text-sm text-slate-400">
-                        <Star className="w-3 h-3 text-yellow-400 fill-current" />
-                        <span>{prof.avaliacao}</span>
+            {loadingProfissionais ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="w-8 h-8 text-yellow-400 animate-spin" />
+              </div>
+            ) : profissionais.length === 0 ? (
+              <div className="text-center py-12 text-slate-400">
+                <p>Nenhum profissional disponível para esta categoria.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {profissionais.map((prof) => (
+                  <div 
+                    key={prof.id}
+                    onClick={() => router.push(`/profissional/${prof.id}`)}
+                    className="bg-slate-800 rounded-2xl p-4 border border-slate-700 active:scale-95 transition-transform"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="relative">
+                        <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-pink-400 to-purple-600 flex items-center justify-center text-white font-bold text-xl">
+                          {prof.nome?.charAt(0).toUpperCase() || 'P'}
+                        </div>
+                        {prof.ativo && (
+                          <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-green-500 border-2 border-slate-800 rounded-full"></div>
+                        )}
+                      </div>
+                      <div className="flex-1">
+                        <h4 className="font-bold text-white">{prof.nome}</h4>
+                        <div className="flex items-center gap-1 text-sm text-slate-400">
+                          <Star className="w-3 h-3 text-yellow-400 fill-current" />
+                          <span>{prof.avaliacao || 5.0}</span>
+                          <span className="text-xs">({prof.cidade || 'Sem cidade'})</span>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <span className="block text-lg font-bold text-white">
+                          R$ {prof.preco_hora || '0'}
+                        </span>
+                        <button className="mt-1 px-3 py-1 bg-gradient-to-r from-yellow-400 to-orange-500 text-slate-900 text-xs font-bold rounded-lg">
+                          Agendar
+                        </button>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <span className="block text-lg font-bold text-white">{prof.preco}</span>
-                      <button className="mt-1 px-3 py-1 bg-gradient-to-r from-yellow-400 to-orange-500 text-slate-900 text-xs font-bold rounded-lg">
-                        Agendar
-                      </button>
-                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </main>
         )}
       </div>
@@ -267,11 +298,6 @@ export default function ClienteDashboard() {
                       {servico.nome}
                     </h3>
                     <p className="text-sm text-gray-500">{servico.descricao}</p>
-                    <div className="flex items-center gap-2 mt-1 text-xs text-gray-400">
-                      <span className="text-green-600 font-medium">{servico.profissionais} profissionais</span>
-                      <span>•</span>
-                      <span>A partir de {servico.preco}</span>
-                    </div>
                   </div>
 
                   <ChevronRight className={`w-5 h-5 ${servicoSelecionado === servico.id ? 'text-pink-400' : 'text-gray-300'}`} />
@@ -294,32 +320,43 @@ export default function ClienteDashboard() {
             </div>
           ) : (
             <div className="max-w-4xl">
-              {(() => {
-                const servico = servicos.find(s => s.id === servicoSelecionado)
-                if (!servico) return null
-                return (
-                  <div className="mb-8">
-                    <div className="flex items-center gap-4 mb-6">
-                      <div className={`w-16 h-16 rounded-2xl ${servico.bgIcon} bg-opacity-10 flex items-center justify-center`}>
-                        <servico.icon className={`w-8 h-8 ${servico.textColor}`} />
-                      </div>
-                      <div>
-                        <h2 className="text-3xl font-bold text-gray-800">{servico.nome}</h2>
-                        <p className="text-gray-500">{servico.profissionais} profissionais disponíveis</p>
-                      </div>
+              {servicoAtual && (
+                <div className="mb-8">
+                  <div className="flex items-center gap-4 mb-6">
+                    <div className={`w-16 h-16 rounded-2xl ${servicoAtual.bgIcon} bg-opacity-10 flex items-center justify-center`}>
+                      <servicoAtual.icon className={`w-8 h-8 ${servicoAtual.textColor}`} />
                     </div>
+                    <div>
+                      <h2 className="text-3xl font-bold text-gray-800">{servicoAtual.nome}</h2>
+                      <p className="text-gray-500">
+                        {loadingProfissionais ? 'Carregando...' : `${profissionais.length} profissionais disponíveis`}
+                      </p>
+                    </div>
+                  </div>
 
+                  {loadingProfissionais ? (
+                    <div className="flex items-center justify-center py-12">
+                      <Loader2 className="w-8 h-8 text-pink-500 animate-spin" />
+                    </div>
+                  ) : profissionais.length === 0 ? (
+                    <div className="text-center py-12 text-gray-500 bg-white rounded-2xl border border-gray-200">
+                      <p className="text-lg">Nenhum profissional disponível para esta categoria.</p>
+                      <p className="text-sm mt-2">Tente outra categoria ou volte mais tarde.</p>
+                    </div>
+                  ) : (
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                      {profissionaisAtuais.map((prof) => (
+                      {profissionais.map((prof) => (
                         <div 
                           key={prof.id}
                           className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 hover:shadow-md transition-all cursor-pointer group"
-                          onClick={() => router.push(`/agendar/${prof.id}?servico=${servicoSelecionado}`)}
+                          onClick={() => router.push(`/profissional/${prof.id}`)}
                         >
                           <div className="flex items-start gap-4">
                             <div className="relative">
-                              <img src={prof.foto} alt={prof.nome} className="w-20 h-20 rounded-2xl object-cover" />
-                              {prof.online && (
+                              <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-pink-400 to-purple-600 flex items-center justify-center text-white text-2xl font-bold">
+                                {prof.nome?.charAt(0).toUpperCase() || 'P'}
+                              </div>
+                              {prof.ativo && (
                                 <div className="absolute -bottom-2 -right-2 w-4 h-4 bg-green-500 border-2 border-white rounded-full"></div>
                               )}
                             </div>
@@ -330,21 +367,18 @@ export default function ClienteDashboard() {
                                   <h3 className="font-bold text-xl text-gray-800 group-hover:text-pink-600 transition-colors">{prof.nome}</h3>
                                   <div className="flex items-center gap-2 mt-1">
                                     <Star className="w-4 h-4 text-yellow-400 fill-current" />
-                                    <span className="font-medium text-gray-700">{prof.avaliacao}</span>
-                                    <span className="text-gray-400 text-sm">(128 avaliações)</span>
+                                    <span className="font-medium text-gray-700">{prof.avaliacao || 5.0}</span>
                                   </div>
                                 </div>
-                                <span className="text-2xl font-bold text-gray-800">{prof.preco}</span>
+                                <span className="text-2xl font-bold text-gray-800">
+                                  R$ {prof.preco_hora || 0}
+                                </span>
                               </div>
                               
                               <div className="flex items-center gap-4 mt-3 text-sm text-gray-500">
                                 <span className="flex items-center gap-1">
                                   <MapPin className="w-4 h-4 text-green-500" />
-                                  2.3 km de distância
-                                </span>
-                                <span className="flex items-center gap-1">
-                                  <Clock className="w-4 h-4 text-blue-500" />
-                                  Disponível hoje
+                                  {prof.cidade || 'Cidade não informada'}
                                 </span>
                               </div>
 
@@ -356,9 +390,9 @@ export default function ClienteDashboard() {
                         </div>
                       ))}
                     </div>
-                  </div>
-                )
-              })()}
+                  )}
+                </div>
+              )}
             </div>
           )}
         </main>
