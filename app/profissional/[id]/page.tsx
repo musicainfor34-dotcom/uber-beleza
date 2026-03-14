@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@supabase/supabase-js'
-import { Star, MapPin, Phone, Clock, ArrowLeft, Calendar, X, Scissors, Loader2 } from 'lucide-react'
+import { Star, MapPin, Phone, Clock, ArrowLeft, Calendar, X, Scissors, Loader2, Check } from 'lucide-react'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -63,7 +63,6 @@ export default function PerfilProfissional() {
 
   const fetchProfissional = async () => {
     try {
-      // CORREÇÃO: Buscar apenas da tabela professionals, sem join com profiles
       const { data, error } = await supabase
         .from('professionals')
         .select('*')
@@ -197,7 +196,7 @@ export default function PerfilProfissional() {
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <p className="text-lg text-gray-600 mb-4">Profissional não encontrado</p>
-          <button onClick={() => router.push('/')} className="px-4 py-2 border rounded-lg">
+          <button onClick={() => router.push('/')} className="px-4 py-2 bg-pink-500 text-white rounded-lg font-semibold">
             Voltar
           </button>
         </div>
@@ -302,54 +301,58 @@ export default function PerfilProfissional() {
         </div>
       </div>
 
-      {/* MODAL */}
+      {/* MODAL DE AGENDAMENTO */}
       {modalAberto && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl">
-            <div className="sticky top-0 bg-white border-b border-gray-100 p-4 flex items-center justify-between">
+            {/* Header do Modal */}
+            <div className="sticky top-0 bg-white border-b border-gray-200 p-4 flex items-center justify-between z-10">
               <div>
                 <h2 className="text-xl font-bold text-gray-900">Agendar Serviço</h2>
-                <p className="text-sm text-gray-500">com {profissional.nome}</p>
+                <p className="text-sm text-gray-600">com {profissional.nome}</p>
               </div>
               <button onClick={() => setModalAberto(false)} className="p-2 hover:bg-gray-100 rounded-full">
-                <X className="w-5 h-5 text-gray-500" />
+                <X className="w-5 h-5 text-gray-700" />
               </button>
             </div>
 
             {sucesso ? (
               <div className="p-8 text-center">
                 <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <svg className="w-8 h-8 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
+                  <Check className="w-8 h-8 text-green-600" />
                 </div>
                 <h3 className="text-lg font-semibold text-gray-900 mb-2">Agendamento Confirmado!</h3>
+                <p className="text-gray-600">Em breve {profissional.nome} entrará em contato.</p>
               </div>
             ) : (
-              <form onSubmit={handleSubmit} className="p-4 space-y-4">
+              <form onSubmit={handleSubmit} className="p-6 space-y-5">
                 {erro && (
-                  <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg text-sm">
+                  <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
                     {erro}
                   </div>
                 )}
 
                 {/* Serviço */}
                 <div>
-                  <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
-                    <Scissors className="w-4 h-4" />
+                  <label className="flex items-center gap-2 text-sm font-semibold text-gray-800 mb-3">
+                    <Scissors className="w-4 h-4 text-pink-500" />
                     Serviço *
                   </label>
                   {loadingServicos ? (
-                    <div className="flex items-center gap-2 text-gray-500 py-2">
+                    <div className="flex items-center gap-2 text-gray-600 py-2">
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      Carregando...
+                      Carregando serviços...
                     </div>
                   ) : (
                     <div className="grid gap-2">
                       {servicos.map((servico) => (
                         <label 
                           key={servico.id}
-                          className={`flex items-center justify-between p-3 border rounded-lg cursor-pointer ${servicoSelecionado === servico.id ? 'border-pink-500 bg-pink-50' : 'border-gray-200'}`}
+                          className={`flex items-center justify-between p-3 border-2 rounded-lg cursor-pointer transition-all ${
+                            servicoSelecionado === servico.id 
+                              ? 'border-pink-500 bg-pink-50' 
+                              : 'border-gray-200 hover:border-pink-200'
+                          }`}
                         >
                           <div className="flex items-start gap-3">
                             <input
@@ -358,13 +361,14 @@ export default function PerfilProfissional() {
                               value={servico.id}
                               checked={servicoSelecionado === servico.id}
                               onChange={(e) => setServicoSelecionado(e.target.value)}
+                              className="mt-1 w-4 h-4 text-pink-600 accent-pink-600"
                             />
                             <div>
-                              <p className="font-medium text-gray-900">{servico.nome}</p>
-                              <p className="text-xs text-gray-500">{servico.duracao_minutos} min</p>
+                              <p className="font-semibold text-gray-900">{servico.nome}</p>
+                              <p className="text-xs text-gray-600">{servico.duracao_minutos} minutos</p>
                             </div>
                           </div>
-                          <span className="font-semibold text-pink-600">
+                          <span className="font-bold text-pink-600">
                             R$ {servico.preco_base.toFixed(2)}
                           </span>
                         </label>
@@ -376,8 +380,8 @@ export default function PerfilProfissional() {
                 {/* Data e Horário */}
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
-                      <Calendar className="w-4 h-4" />
+                    <label className="flex items-center gap-2 text-sm font-semibold text-gray-800 mb-2">
+                      <Calendar className="w-4 h-4 text-pink-500" />
                       Data *
                     </label>
                     <input
@@ -385,24 +389,24 @@ export default function PerfilProfissional() {
                       value={data}
                       onChange={(e) => setData(e.target.value)}
                       min={new Date().toISOString().split('T')[0]}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 bg-white focus:ring-2 focus:ring-pink-500 focus:border-transparent"
                       required
                     />
                   </div>
                   <div>
-                    <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
-                      <Clock className="w-4 h-4" />
+                    <label className="flex items-center gap-2 text-sm font-semibold text-gray-800 mb-2">
+                      <Clock className="w-4 h-4 text-pink-500" />
                       Horário *
                     </label>
                     <select
                       value={horario}
                       onChange={(e) => setHorario(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 bg-white focus:ring-2 focus:ring-pink-500 focus:border-transparent"
                       required
                     >
-                      <option value="">Selecione</option>
+                      <option value="" className="text-gray-900">Selecione</option>
                       {horariosDisponiveis().map((h) => (
-                        <option key={h} value={h}>{h}</option>
+                        <option key={h} value={h} className="text-gray-900">{h}</option>
                       ))}
                     </select>
                   </div>
@@ -410,16 +414,16 @@ export default function PerfilProfissional() {
 
                 {/* Endereço */}
                 <div className="space-y-3">
-                  <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
-                    <MapPin className="w-4 h-4" />
-                    Endereço *
+                  <label className="flex items-center gap-2 text-sm font-semibold text-gray-800">
+                    <MapPin className="w-4 h-4 text-pink-500" />
+                    Endereço completo *
                   </label>
                   <input
                     type="text"
-                    placeholder="Rua, número, apto"
+                    placeholder="Rua, número, apartamento"
                     value={endereco}
                     onChange={(e) => setEndereco(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 placeholder-gray-500 bg-white focus:ring-2 focus:ring-pink-500 focus:border-transparent"
                     required
                   />
                   <div className="grid grid-cols-2 gap-3">
@@ -428,29 +432,29 @@ export default function PerfilProfissional() {
                       placeholder="Bairro"
                       value={bairro}
                       onChange={(e) => setBairro(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 placeholder-gray-500 bg-white focus:ring-2 focus:ring-pink-500 focus:border-transparent"
                     />
                     <input
                       type="text"
                       placeholder="Cidade"
                       value={cidade}
                       onChange={(e) => setCidade(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 placeholder-gray-500 bg-white focus:ring-2 focus:ring-pink-500 focus:border-transparent"
                     />
                   </div>
                   <input
                     type="text"
-                    placeholder="Referência (opcional)"
+                    placeholder="Ponto de referência (opcional)"
                     value={referencia}
                     onChange={(e) => setReferencia(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 placeholder-gray-500 bg-white focus:ring-2 focus:ring-pink-500 focus:border-transparent"
                   />
                 </div>
 
                 <button
                   type="submit"
                   disabled={loadingSubmit}
-                  className="w-full bg-pink-500 hover:bg-pink-600 disabled:bg-pink-300 text-white font-semibold py-3 rounded-lg"
+                  className="w-full bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-600 hover:to-purple-700 disabled:opacity-50 text-white font-bold py-3 rounded-xl transition-all"
                 >
                   {loadingSubmit ? 'Processando...' : 'Confirmar Agendamento'}
                 </button>
