@@ -5,13 +5,16 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@supabase/supabase-js'
 import { 
   Calendar, 
-  Clock, 
-  DollarSign, 
   Users, 
-  Settings, 
-  LogOut,
-  Star,
-  Briefcase
+  Star, 
+  Scissors, 
+  LogOut, 
+  MapPin, 
+  Phone,
+  Clock,
+  CheckCircle,
+  XCircle,
+  AlertCircle
 } from 'lucide-react'
 
 const supabase = createClient(
@@ -19,53 +22,137 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
+interface Agendamento {
+  id: string
+  data_agendamento: string
+  hora_inicio: string
+  hora_fim: string
+  endereco: string
+  bairro: string
+  cidade: string
+  referencia: string
+  status: 'pendente' | 'confirmado' | 'cancelado' | 'concluido'
+  valor_total: number
+  cliente: {
+    email: string
+  }
+  servico: {
+    nome: string
+    duracao_minutos: number
+  }
+}
+
 export default function DashboardProfissional() {
   const router = useRouter()
+  const [user, setUser] = useState<any>(null)
   const [profissional, setProfissional] = useState<any>(null)
-  const [agendamentos, setAgendamentos] = useState<any[]>([])
+  const [agendamentos, setAgendamentos] = useState<Agendamento[]>([])
   const [loading, setLoading] = useState(true)
+  const [stats, setStats] = useState({
+    hoje: 0,
+    total: 0,
+    avaliacao: 5.0
+  })
 
   useEffect(() => {
-    carregarDados()
+    checkUser()
   }, [])
 
-  async function carregarDados() {
-    try {
-      // Pega usuário logado
-      const { data: { user } } = await supabase.auth.getUser()
-      
-      if (!user) {
-        router.push('/login')
-        return
-      }
+  useEffect(() => {
+    if (user) {
+      fetchProfissional()
+    }
+  }, [user])
 
-      // Verifica se é profissional
-      const { data: profData } = await supabase
+  useEffect(() => {
+    if (profissional) {
+      fetchAgendamentos()
+    }
+  }, [profissional])
+
+  async function checkUser() {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) {
+      router.push('/login')
+      return
+    }
+    setUser(session.user)
+  }
+
+  async function fetchProfissional() {
+    try {
+      const { data, error } = await supabase
         .from('professionals')
         .select('*')
-        .eq('id', user.id)
+        .eq('user_id', user.id)
         .single()
 
-      if (!profData) {
-        // Se não for profissional, redireciona
-        router.push('/cliente/dashboard')
-        return
+      if (error) throw error
+      if (data) {
+        setProfissional(data)
       }
-
-      setProfissional(profData)
-
-      // Busca agendamentos deste profissional
-      const { data: agendData } = await supabase
-        .from('agendamentos')
-        .select('*')
-        .eq('profissional_id', user.id)
-        .order('data', { ascending: true })
-
-      setAgendamentos(agendData || [])
     } catch (error) {
-      console.error(error)
+      console.error('Erro ao buscar profissional:', error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function fetchAgendamentos() {
+    try {
+      const today = new Date().toISOString().split('T')[0]
+      
+      // Buscar agendamentos do profissional com dados do cliente e serviço
+      const { data, error } = await supabase
+        .from('agendamentos')
+        .select(`
+          *,
+          cliente:cliente_id (email),
+          servico:servico_id (nome, duracao_minutos)
+        `)
+        .eq('profissional_id', profissional.id)
+        .order('data_agendamento', { ascending: true })
+        .order('hora_inicio', { ascending: true })
+
+      if (error) throw error
+
+      const agendamentosData = data || []
+      setAgendamentos(agendamentosData)
+
+      // Calcular estatísticas
+      const hoje = agendamentosData.filter((a: Agendamento) => 
+        a.data_agendamento === today && a.status !== 'cancelado'
+      ).length
+      
+      const total = agendamentosData.filter((a: Agendamento) => 
+        a.status !== 'cancelado'
+      ).length
+
+      setStats({
+        hoje,
+        total,
+        avaliacao: profissional.avaliacao || 5.0
+      })
+
+    } catch (error) {
+      console.error('Erro ao buscar agendamentos:', error)
+    }
+  }
+
+  async function atualizarStatus(agendamentoId: string, novoStatus: string) {
+    try {
+      const { error } = await supabase
+        .from('agendamentos')
+        .update({ status: novoStatus })
+        .eq('id', agendamentoId)
+
+      if (error) throw error
+      
+      // Recarregar agendamentos
+      fetchAgendamentos()
+    } catch (error) {
+      console.error('Erro ao atualizar status:', error)
+      alert('Erro ao atualizar status')
     }
   }
 
@@ -74,271 +161,280 @@ export default function DashboardProfissional() {
     router.push('/login')
   }
 
+  const formatarData = (data: string) => {
+    return new Date(data).toLocaleDateString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    })
+  }
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'confirmado':
+        return 'bg-green-100 text-green-700 border-green-200'
+      case 'pendente':
+        return 'bg-yellow-100 text-yellow-700 border-yellow-200'
+      case 'cancelado':
+        return 'bg-red-100 text-red-700 border-red-200'
+      case 'concluido':
+        return 'bg-blue-100 text-blue-700 border-blue-200'
+      default:
+        return 'bg-gray-100 text-gray-700 border-gray-200'
+    }
+  }
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'confirmado':
+        return <CheckCircle className="w-4 h-4" />
+      case 'cancelado':
+        return <XCircle className="w-4 h-4" />
+      case 'pendente':
+        return <AlertCircle className="w-4 h-4" />
+      default:
+        return null
+    }
+  }
+
   if (loading) {
     return (
-      <div style={{ 
-        minHeight: '100vh', 
-        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        color: 'white'
-      }}>
-        Carregando...
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600"></div>
+      </div>
+    )
+  }
+
+  if (!profissional) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-lg text-gray-600">Complete seu cadastro primeiro</p>
+          <button 
+            onClick={() => router.push('/profissional/completar-cadastro')}
+            className="mt-4 px-4 py-2 bg-purple-600 text-white rounded-lg"
+          >
+            Completar Cadastro
+          </button>
+        </div>
       </div>
     )
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: '#f5f5f5' }}>
+    <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <header style={{
-        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-        padding: '20px',
-        color: 'white'
-      }}>
-        <div style={{
-          maxWidth: '1200px',
-          margin: '0 auto',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center'
-        }}>
+      <header className="bg-gradient-to-r from-purple-600 to-pink-500 text-white p-4 shadow-lg">
+        <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div>
-            <h1 style={{ margin: 0, fontSize: '24px' }}>Beleza Connect</h1>
-            <p style={{ margin: '5px 0 0 0', opacity: 0.9 }}>Painel do Profissional</p>
+            <h1 className="text-2xl font-bold">Beleza Connect</h1>
+            <p className="text-sm opacity-90">Painel do Profissional</p>
           </div>
-          
-          <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
-            <span style={{ fontSize: '14px' }}>
-              Olá, {profissional?.nome?.split(' ')[0] || 'Profissional'}
-            </span>
-            <button
+          <div className="flex items-center gap-4">
+            <span className="hidden md:inline">Olá, {profissional.nome}</span>
+            <button 
               onClick={handleLogout}
-              style={{
-                background: 'rgba(255,255,255,0.2)',
-                border: 'none',
-                color: 'white',
-                padding: '8px 16px',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '5px'
-              }}
+              className="flex items-center gap-2 px-4 py-2 bg-white/20 hover:bg-white/30 rounded-lg transition-colors"
             >
-              <LogOut size={18} />
-              Sair
+              <LogOut className="w-4 h-4" />
+              <span className="hidden md:inline">Sair</span>
             </button>
           </div>
         </div>
       </header>
 
-      <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '30px 20px' }}>
-        
-        {/* Cards de Resumo */}
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
-          gap: '20px',
-          marginBottom: '30px'
-        }}>
-          <div style={{
-            background: 'white',
-            padding: '20px',
-            borderRadius: '12px',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
-              <Calendar style={{ color: '#667eea' }} />
-              <span style={{ color: '#666' }}>Agendamentos Hoje</span>
+      <main className="max-w-7xl mx-auto p-4 md:p-6 space-y-6">
+        {/* Stats Cards */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="p-2 bg-purple-100 rounded-lg">
+                <Calendar className="w-5 h-5 text-purple-600" />
+              </div>
+              <span className="text-sm text-gray-600">Agendamentos Hoje</span>
             </div>
-            <h2 style={{ margin: 0, fontSize: '32px', color: '#333' }}>
-              {agendamentos.filter(a => {
-                const hoje = new Date().toISOString().split('T')[0]
-                return a.data === hoje
-              }).length}
-            </h2>
+            <p className="text-3xl font-bold text-gray-800">{stats.hoje}</p>
           </div>
 
-          <div style={{
-            background: 'white',
-            padding: '20px',
-            borderRadius: '12px',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
-              <Users style={{ color: '#764ba2' }} />
-              <span style={{ color: '#666' }}>Total Clientes</span>
+          <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="p-2 bg-blue-100 rounded-lg">
+                <Users className="w-5 h-5 text-blue-600" />
+              </div>
+              <span className="text-sm text-gray-600">Total Clientes</span>
             </div>
-            <h2 style={{ margin: 0, fontSize: '32px', color: '#333' }}>
-              {new Set(agendamentos.map(a => a.cliente_id)).size}
-            </h2>
+            <p className="text-3xl font-bold text-gray-800">{stats.total}</p>
           </div>
 
-          <div style={{
-            background: 'white',
-            padding: '20px',
-            borderRadius: '12px',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
-              <Star style={{ color: '#f59e0b' }} />
-              <span style={{ color: '#666' }}>Avaliação</span>
+          <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="p-2 bg-yellow-100 rounded-lg">
+                <Star className="w-5 h-5 text-yellow-600" />
+              </div>
+              <span className="text-sm text-gray-600">Avaliação</span>
             </div>
-            <h2 style={{ margin: 0, fontSize: '32px', color: '#333' }}>
-              {profissional?.avaliacao || '5.0'} ⭐
-            </h2>
+            <div className="flex items-center gap-1">
+              <p className="text-3xl font-bold text-gray-800">{stats.avaliacao}</p>
+              <Star className="w-5 h-5 text-yellow-400 fill-current" />
+            </div>
           </div>
 
-          <div 
-            onClick={() => router.push('/profissional/perfil')}
-            style={{
-              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-              padding: '20px',
-              borderRadius: '12px',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-              cursor: 'pointer',
-              color: 'white'
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
-              <Briefcase style={{ color: 'white' }} />
-              <span>Meus Serviços</span>
+          <div className="bg-gradient-to-br from-purple-500 to-pink-500 p-4 rounded-xl shadow-sm text-white">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="p-2 bg-white/20 rounded-lg">
+                <Scissors className="w-5 h-5" />
+              </div>
+              <span className="text-sm opacity-90">Meus Serviços</span>
             </div>
-            <p style={{ margin: 0, fontSize: '14px', opacity: 0.9 }}>
-              {profissional?.especialidade || 'Clique para definir sua especialidade'}
+            <p className="text-lg font-semibold">
+              {profissional.especialidade?.join(', ') || 'Não definido'}
             </p>
           </div>
         </div>
 
-        {/* Grid Principal */}
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
-          gap: '30px'
-        }}>
-          
-          {/* Próximos Agendamentos */}
-          <div style={{
-            background: 'white',
-            borderRadius: '12px',
-            padding: '25px',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-          }}>
-            <h3 style={{ margin: '0 0 20px 0', color: '#333' }}>
-              Próximos Agendamentos
-            </h3>
+        <div className="grid md:grid-cols-3 gap-6">
+          {/* Lista de Agendamentos */}
+          <div className="md:col-span-2 space-y-4">
+            <h2 className="text-xl font-bold text-gray-800">Próximos Agendamentos</h2>
             
             {agendamentos.length === 0 ? (
-              <p style={{ color: '#999', textAlign: 'center', padding: '40px 0' }}>
-                Nenhum agendamento ainda
-              </p>
+              <div className="bg-white rounded-xl p-8 text-center border border-gray-100 shadow-sm">
+                <Calendar className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                <p className="text-gray-500">Nenhum agendamento ainda</p>
+                <p className="text-sm text-gray-400 mt-1">
+                  Quando clientes agendarem, aparecerão aqui
+                </p>
+              </div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                {agendamentos.slice(0, 5).map((agend, idx) => (
-                  <div key={idx} style={{
-                    border: '1px solid #eee',
-                    borderRadius: '8px',
-                    padding: '15px',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center'
-                  }}>
-                    <div>
-                      <p style={{ margin: '0 0 5px 0', fontWeight: '600', color: '#333' }}>
-                        {agend.servico}
-                      </p>
-                      <p style={{ margin: 0, fontSize: '14px', color: '#666', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                        <Clock size={14} /> {agend.data} às {agend.hora}
-                      </p>
+              <div className="space-y-3">
+                {agendamentos.map((agendamento) => (
+                  <div 
+                    key={agendamento.id}
+                    className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm hover:shadow-md transition-shadow"
+                  >
+                    <div className="flex items-start justify-between mb-3">
+                      <div>
+                        <div className="flex items-center gap-2 mb-1">
+                          <h3 className="font-bold text-gray-800">
+                            {agendamento.servico?.nome || 'Serviço'}
+                          </h3>
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium border flex items-center gap-1 ${getStatusColor(agendamento.status)}`}>
+                            {getStatusIcon(agendamento.status)}
+                            {agendamento.status.charAt(0).toUpperCase() + agendamento.status.slice(1)}
+                          </span>
+                        </div>
+                        <p className="text-sm text-gray-600">
+                          Cliente: {agendamento.cliente?.email?.split('@')[0] || 'Cliente'}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-bold text-purple-600">
+                          R$ {agendamento.valor_total?.toFixed(2)}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          {agendamento.servico?.duracao_minutos} min
+                        </p>
+                      </div>
                     </div>
-                    <span style={{
-                      background: agend.status === 'confirmado' ? '#dcfce7' : '#fef3c7',
-                      color: agend.status === 'confirmado' ? '#166534' : '#92400e',
-                      padding: '4px 12px',
-                      borderRadius: '20px',
-                      fontSize: '12px',
-                      fontWeight: '600'
-                    }}>
-                      {agend.status || 'Pendente'}
-                    </span>
+
+                    <div className="grid md:grid-cols-2 gap-2 mb-3 text-sm text-gray-600">
+                      <div className="flex items-center gap-2">
+                        <Calendar className="w-4 h-4 text-gray-400" />
+                        <span>{formatarData(agendamento.data_agendamento)} às {agendamento.hora_inicio}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <MapPin className="w-4 h-4 text-gray-400" />
+                        <span className="truncate">{agendamento.bairro}, {agendamento.cidade}</span>
+                      </div>
+                      <div className="flex items-center gap-2 md:col-span-2">
+                        <span className="text-gray-400">📍</span>
+                        <span className="truncate">{agendamento.endereco}</span>
+                        {agendamento.referencia && (
+                          <span className="text-gray-400 text-xs">({agendamento.referencia})</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Ações */}
+                    {agendamento.status === 'pendente' && (
+                      <div className="flex gap-2 mt-3 pt-3 border-t border-gray-100">
+                        <button
+                          onClick={() => atualizarStatus(agendamento.id, 'confirmado')}
+                          className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium transition-colors"
+                        >
+                          <CheckCircle className="w-4 h-4" />
+                          Confirmar
+                        </button>
+                        <button
+                          onClick={() => atualizarStatus(agendamento.id, 'cancelado')}
+                          className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-medium transition-colors"
+                        >
+                          <XCircle className="w-4 h-4" />
+                          Cancelar
+                        </button>
+                      </div>
+                    )}
+
+                    {agendamento.status === 'confirmado' && (
+                      <div className="flex gap-2 mt-3 pt-3 border-t border-gray-100">
+                        <button
+                          onClick={() => atualizarStatus(agendamento.id, 'concluido')}
+                          className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-medium transition-colors"
+                        >
+                          <CheckCircle className="w-4 h-4" />
+                          Marcar como Concluído
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
             )}
           </div>
 
-          {/* Perfil Resumido */}
-          <div style={{
-            background: 'white',
-            borderRadius: '12px',
-            padding: '25px',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-          }}>
-            <h3 style={{ margin: '0 0 20px 0', color: '#333' }}>
-              Meu Perfil
-            </h3>
+          {/* Perfil do Profissional */}
+          <div className="bg-white rounded-xl p-6 border border-gray-100 shadow-sm h-fit">
+            <h3 className="font-bold text-gray-800 mb-4">Meu Perfil</h3>
             
-            <div style={{ textAlign: 'center', marginBottom: '25px' }}>
-              <div style={{
-                width: '100px',
-                height: '100px',
-                borderRadius: '50%',
-                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                margin: '0 auto 15px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '36px',
-                color: 'white',
-                fontWeight: 'bold'
-              }}>
-                {profissional?.nome?.charAt(0) || 'P'}
+            <div className="text-center mb-6">
+              <div className="w-24 h-24 bg-gradient-to-br from-purple-400 to-pink-500 rounded-full mx-auto flex items-center justify-center text-white text-3xl font-bold mb-3">
+                {profissional.nome?.[0] || 'P'}
               </div>
-              <h4 style={{ margin: '0 0 5px 0', color: '#333' }}>{profissional?.nome}</h4>
-              <p style={{ margin: 0, color: '#666', fontSize: '14px' }}>{profissional?.email}</p>
+              <h4 className="font-bold text-lg text-gray-800">{profissional.nome}</h4>
+              <p className="text-sm text-gray-500">{user?.email}</p>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid #eee' }}>
-                <span style={{ color: '#666' }}>Especialidade:</span>
-                <span style={{ color: '#333', fontWeight: '600' }}>{profissional?.especialidade || 'Não definida'}</span>
+            <div className="space-y-3 text-sm">
+              <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                <span className="text-gray-600">Especialidade:</span>
+                <span className="font-medium text-gray-800">
+                  {profissional.especialidade?.join(', ') || 'Não definido'}
+                </span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid #eee' }}>
-                <span style={{ color: '#666' }}>Telefone:</span>
-                <span style={{ color: '#333', fontWeight: '600' }}>{profissional?.telefone || 'Não cadastrado'}</span>
+              
+              <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                <span className="text-gray-600">Telefone:</span>
+                <span className="font-medium text-gray-800">{profissional.telefone}</span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid #eee' }}>
-                <span style={{ color: '#666' }}>Cidade:</span>
-                <span style={{ color: '#333', fontWeight: '600' }}>{profissional?.cidade || 'Não definida'}</span>
+              
+              <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                <span className="text-gray-600">Cidade:</span>
+                <span className="font-medium text-gray-800">{profissional.cidade}</span>
+              </div>
+
+              <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                <span className="text-gray-600">Preço/hora:</span>
+                <span className="font-bold text-purple-600">R$ {profissional.preco_hora}</span>
               </div>
             </div>
 
-            <button
-              onClick={() => router.push('/profissional/perfil')}
-              style={{
-                width: '100%',
-                marginTop: '20px',
-                padding: '12px',
-                background: '#667eea',
-                color: 'white',
-                border: 'none',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px',
-                fontSize: '14px'
-              }}
-            >
-              <Settings size={16} />
+            <button className="w-full mt-6 px-4 py-2 border-2 border-purple-500 text-purple-600 rounded-lg font-medium hover:bg-purple-50 transition-colors flex items-center justify-center gap-2">
+              <span>⚙️</span>
               Editar Perfil e Serviços
             </button>
           </div>
         </div>
-      </div>
+      </main>
     </div>
   )
 }
