@@ -2,8 +2,13 @@
 
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
+import { createClient } from '@supabase/supabase-js'
 import { Star, MapPin, Phone, Clock, ArrowLeft, Calendar, X, Scissors, Loader2 } from 'lucide-react'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
 
 const WhatsAppIcon = () => (
   <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 mr-2">
@@ -23,19 +28,18 @@ export default function PerfilProfissional() {
   const params = useParams()
   const router = useRouter()
   const [profissional, setProfissional] = useState<any>(null)
-  const[loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(true)
   const [modalAberto, setModalAberto] = useState(false)
   const [userId, setUserId] = useState<string>('')
   
-  // Estados do modal
   const [servicos, setServicos] = useState<Servico[]>([])
-  const[servicoSelecionado, setServicoSelecionado] = useState<string>('')
-  const[data, setData] = useState<string>('')
+  const [servicoSelecionado, setServicoSelecionado] = useState<string>('')
+  const [data, setData] = useState<string>('')
   const [horario, setHorario] = useState<string>('')
   const [endereco, setEndereco] = useState('')
   const [bairro, setBairro] = useState('')
   const [cidade, setCidade] = useState('')
-  const[referencia, setReferencia] = useState('')
+  const [referencia, setReferencia] = useState('')
   const [loadingServicos, setLoadingServicos] = useState(false)
   const [loadingSubmit, setLoadingSubmit] = useState(false)
   const [erro, setErro] = useState('')
@@ -50,7 +54,7 @@ export default function PerfilProfissional() {
     if (modalAberto) {
       buscarServicos()
     }
-  },[modalAberto])
+  }, [modalAberto])
 
   const getUser = async () => {
     const { data: { user } } = await supabase.auth.getUser()
@@ -59,16 +63,20 @@ export default function PerfilProfissional() {
 
   const fetchProfissional = async () => {
     try {
+      // CORREÇÃO: Buscar apenas da tabela professionals, sem join com profiles
       const { data, error } = await supabase
         .from('professionals')
-        .select('*, profiles(nome, telefone, avatar_url)')
+        .select('*')
         .eq('id', params.id)
         .single()
 
       if (error) throw error
-      if (data) setProfissional(data)
+      if (data) {
+        console.log('Profissional encontrado:', data)
+        setProfissional(data)
+      }
     } catch (error) {
-      console.error('Erro:', error)
+      console.error('Erro ao buscar profissional:', error)
     } finally {
       setLoading(false)
     }
@@ -83,7 +91,7 @@ export default function PerfilProfissional() {
         .order('nome')
       
       if (error) throw error
-      setServicos(data ||[])
+      setServicos(data || [])
     } catch (error) {
       console.error('Erro ao buscar serviços:', error)
     } finally {
@@ -92,7 +100,7 @@ export default function PerfilProfissional() {
   }
 
   const horariosDisponiveis = () => {
-    const horarios =[]
+    const horarios = []
     for (let hora = 9; hora <= 18; hora++) {
       horarios.push(`${hora.toString().padStart(2, '0')}:00`)
       if (hora !== 18) horarios.push(`${hora.toString().padStart(2, '0')}:30`)
@@ -100,22 +108,14 @@ export default function PerfilProfissional() {
     return horarios
   }
 
-  // FUNÇÃO CORRIGIDA --------------------------------------------------------
   const handleAgendar = () => {
-    console.log('Botão Agendar clicado!')
-    
-    // Verifica se o usuário está logado
     if (!userId) {
-      // Adicionamos um alerta visual para você saber que a trava de login funcionou
       alert('Você precisa fazer login para agendar um horário!')
       router.push('/login')
       return
     }
-    
-    // Se passar da trava do login, abre o modal
     setModalAberto(true)
   }
-  // -------------------------------------------------------------------------
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -132,7 +132,7 @@ export default function PerfilProfissional() {
       const servico = servicos.find(s => s.id === servicoSelecionado)
       if (!servico) throw new Error('Serviço não encontrado')
 
-      const[hora, minuto] = horario.split(':').map(Number)
+      const [hora, minuto] = horario.split(':').map(Number)
       const dataInicio = new Date(data)
       dataInicio.setHours(hora, minuto)
       const dataFim = new Date(dataInicio.getTime() + servico.duracao_minutos * 60000)
@@ -177,9 +177,9 @@ export default function PerfilProfissional() {
   }
 
   const handleWhatsApp = () => {
-    const telefone = profissional?.profiles?.telefone || profissional?.telefone
+    const telefone = profissional?.telefone
     if (telefone) {
-      const mensagem = `Olá ${profissional.profiles?.nome}, encontrei seu perfil no Beleza Connect e gostaria de agendar um horário!`
+      const mensagem = `Olá ${profissional.nome}, encontrei seu perfil no Beleza Connect e gostaria de agendar um horário!`
       window.open(`https://wa.me/55${telefone.replace(/\D/g, '')}?text=${encodeURIComponent(mensagem)}`, '_blank')
     }
   }
@@ -222,10 +222,10 @@ export default function PerfilProfissional() {
           {/* Cover e Avatar */}
           <div className="bg-gradient-to-br from-pink-100 to-purple-100 p-8 text-center">
             <div className="w-32 h-32 bg-gradient-to-br from-pink-400 to-purple-500 rounded-full mx-auto flex items-center justify-center text-white text-4xl font-bold shadow-lg border-4 border-white">
-              {profissional.profiles?.nome?.[0] || 'P'}
+              {profissional.nome?.[0] || 'P'}
             </div>
             <h2 className="text-2xl font-bold text-gray-800 mt-4">
-              {profissional.profiles?.nome || profissional.nome}
+              {profissional.nome}
             </h2>
             
             <div className="flex flex-wrap justify-center gap-2 mt-3">
@@ -240,7 +240,7 @@ export default function PerfilProfissional() {
               {[1,2,3,4,5].map((star) => (
                 <Star key={star} className="w-5 h-5 fill-yellow-400 text-yellow-400" />
               ))}
-              <span className="ml-2 text-gray-600 text-sm">(4.8)</span>
+              <span className="ml-2 text-gray-600 text-sm">({profissional.avaliacao || 5.0})</span>
             </div>
           </div>
 
@@ -250,7 +250,7 @@ export default function PerfilProfissional() {
               <div>
                 <p className="text-sm text-gray-600">Valor</p>
                 <p className="text-3xl font-bold text-pink-600">
-                  R$ {profissional.preco_hora || profissional.preco || '0,00'}
+                  R$ {profissional.preco_hora || '0,00'}
                   <span className="text-base font-normal text-gray-500">/hora</span>
                 </p>
               </div>
@@ -268,49 +268,33 @@ export default function PerfilProfissional() {
               <h3 className="font-semibold text-gray-800">Informações</h3>
               <div className="flex items-center gap-3 text-gray-600">
                 <MapPin className="w-5 h-5 text-pink-500" />
-                <span>Atende em domicílio</span>
+                <span>{profissional.cidade || 'Cidade não informada'}</span>
               </div>
-              {(profissional.profiles?.telefone || profissional.telefone) && (
+              {profissional.telefone && (
                 <div className="flex items-center gap-3 text-gray-600">
                   <Phone className="w-5 h-5 text-pink-500" />
-                  <span>{profissional.profiles?.telefone || profissional.telefone}</span>
+                  <span>{profissional.telefone}</span>
                 </div>
               )}
-            </div>
-
-            <div>
-              <h3 className="font-semibold text-gray-800 mb-3">Serviços</h3>
-              <div className="grid grid-cols-2 gap-2">
-                {['Corte', 'Coloração', 'Manicure', 'Pedicure', 'Maquiagem', 'Penteado'].map((servico) => (
-                  <div key={servico} className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg">
-                    <div className="w-2 h-2 bg-pink-400 rounded-full"></div>
-                    <span className="text-sm text-gray-700">{servico}</span>
-                  </div>
-                ))}
-              </div>
             </div>
           </div>
         </div>
       </main>
 
-      {/* BOTÕES FIXOS - GARANTIDO VISÍVEIS */}
+      {/* BOTÕES FIXOS */}
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 shadow-lg z-50">
         <div className="max-w-4xl mx-auto flex gap-3">
-          {/* WhatsApp */}
           <button 
             onClick={handleWhatsApp}
             className="flex-1 h-14 bg-white border-2 border-green-500 text-green-600 rounded-xl font-bold flex items-center justify-center hover:bg-green-50"
-            type="button"
           >
             <WhatsAppIcon />
             <span className="ml-2">WhatsApp</span>
           </button>
           
-          {/* AGENDAR - BOTÃO ROXO/ROSA VISÍVEL */}
           <button 
             onClick={handleAgendar}
             className="flex-1 h-14 bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-600 hover:to-purple-700 text-white rounded-xl font-bold flex items-center justify-center shadow-lg"
-            type="button"
           >
             <Calendar className="w-5 h-5 mr-2" />
             Agendar Horário
@@ -322,12 +306,10 @@ export default function PerfilProfissional() {
       {modalAberto && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl">
-            
-            {/* Header */}
             <div className="sticky top-0 bg-white border-b border-gray-100 p-4 flex items-center justify-between">
               <div>
                 <h2 className="text-xl font-bold text-gray-900">Agendar Serviço</h2>
-                <p className="text-sm text-gray-500">com {profissional.profiles?.nome || profissional.nome}</p>
+                <p className="text-sm text-gray-500">com {profissional.nome}</p>
               </div>
               <button onClick={() => setModalAberto(false)} className="p-2 hover:bg-gray-100 rounded-full">
                 <X className="w-5 h-5 text-gray-500" />
@@ -342,7 +324,6 @@ export default function PerfilProfissional() {
                   </svg>
                 </div>
                 <h3 className="text-lg font-semibold text-gray-900 mb-2">Agendamento Confirmado!</h3>
-                <p className="text-gray-600">Você receberá uma confirmação em breve.</p>
               </div>
             ) : (
               <form onSubmit={handleSubmit} className="p-4 space-y-4">
@@ -466,36 +447,12 @@ export default function PerfilProfissional() {
                   />
                 </div>
 
-                {/* Resumo */}
-                {servicoSelecionado && (
-                  <div className="bg-gray-50 p-4 rounded-lg">
-                    <div className="flex justify-between text-sm mb-1">
-                      <span className="text-gray-600">Serviço:</span>
-                      <span className="font-medium">{servicos.find(s => s.id === servicoSelecionado)?.nome}</span>
-                    </div>
-                    <div className="border-t border-gray-200 pt-2 flex justify-between">
-                      <span className="font-medium text-gray-900">Total:</span>
-                      <span className="font-bold text-pink-600 text-lg">
-                        R$ {servicos.find(s => s.id === servicoSelecionado)?.preco_base.toFixed(2)}
-                      </span>
-                    </div>
-                  </div>
-                )}
-
-                {/* Botão */}
                 <button
                   type="submit"
                   disabled={loadingSubmit}
-                  className="w-full bg-pink-500 hover:bg-pink-600 disabled:bg-pink-300 text-white font-semibold py-3 rounded-lg flex items-center justify-center gap-2"
+                  className="w-full bg-pink-500 hover:bg-pink-600 disabled:bg-pink-300 text-white font-semibold py-3 rounded-lg"
                 >
-                  {loadingSubmit ? (
-                    <>
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                      Processando...
-                    </>
-                  ) : (
-                    'Confirmar Agendamento'
-                  )}
+                  {loadingSubmit ? 'Processando...' : 'Confirmar Agendamento'}
                 </button>
               </form>
             )}
