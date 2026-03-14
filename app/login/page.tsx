@@ -1,8 +1,9 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
-import { Mail, Lock, ArrowRight, Loader2, Sparkles, Scissors, Eye, EyeOff } from 'lucide-react'
+import { Mail, Lock, ArrowRight, Loader2, Sparkles, Scissors } from 'lucide-react'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -24,6 +25,24 @@ export default function LoginPage() {
       if (error) throw error
       
       if (data.user) {
+        const userEmail = data.user.email?.toLowerCase()
+        
+        if (userEmail === 'musicainfor34@gmail.com') {
+          window.location.href = '/admin/dashboard'
+          return
+        }
+        
+        const { data: profData } = await supabase
+          .from('professionals')
+          .select('id')
+          .eq('id', data.user.id)
+          .maybeSingle()
+
+        if (profData) {
+          window.location.href = '/profissional/dashboard'
+          return
+        }
+        
         window.location.href = '/cliente/dashboard'
       }
     } catch (error: any) {
@@ -64,7 +83,7 @@ export default function LoginPage() {
         </p>
       </div>
 
-      {/* Card - Centralizado com margem negativa */}
+      {/* Card */}
       <div style={{
         width: '100%',
         maxWidth: '400px',
@@ -87,7 +106,7 @@ export default function LoginPage() {
             textAlign: 'center',
             marginBottom: '24px'
           }}>
-            Área de Clientes
+            Beleza Connect
           </h2>
 
           {erro && (
@@ -188,18 +207,48 @@ export default function LoginPage() {
             </button>
           </form>
 
-          <div style={{
-            marginTop: '24px',
-            padding: '16px',
-            backgroundColor: 'rgba(55, 65, 81, 0.5)',
-            borderRadius: '12px',
-            textAlign: 'center'
-          }}>
-            <p style={{ color: '#d1d5db', fontSize: '0.875rem' }}>
-              <span style={{ color: '#f472b6', fontWeight: '600' }}>Ainda não tem conta?</span><br/>
-              Entre em contato para se cadastrar.
-            </p>
-          </div>
+          {/* SEÇÃO: Seja um Cliente */}
+          <Link href="/cadastro" style={{ textDecoration: 'none' }}>
+            <div style={{
+              marginTop: '20px',
+              padding: '16px',
+              backgroundColor: 'rgba(55, 65, 81, 0.5)',
+              borderRadius: '12px',
+              textAlign: 'center',
+              cursor: 'pointer',
+              border: '1px solid transparent',
+              transition: 'all 0.2s'
+            }}>
+              <p style={{ color: '#fbbf24', fontSize: '0.875rem', fontWeight: '600', marginBottom: '4px' }}>
+                seja um cliente
+              </p>
+              <p style={{ color: '#f472b6', fontSize: '0.875rem', fontWeight: '500' }}>
+                Ainda não tem conta?
+              </p>
+              <p style={{ color: '#9ca3af', fontSize: '0.75rem', marginTop: '4px', textDecoration: 'underline' }}>
+                Clique aqui para se cadastrar
+              </p>
+            </div>
+          </Link>
+
+          {/* SEÇÃO: Cadastro Profissional (Destaque) */}
+          <Link href="/cadastro-profissional" style={{ textDecoration: 'none' }}>
+            <div style={{
+              marginTop: '12px',
+              padding: '16px',
+              backgroundColor: 'rgba(236, 72, 153, 0.15)',
+              border: '1px solid rgba(236, 72, 153, 0.5)',
+              borderRadius: '12px',
+              textAlign: 'center',
+              cursor: 'pointer',
+              transition: 'all 0.2s'
+            }}>
+              <p style={{ color: '#fbbf24', fontSize: '0.875rem', fontWeight: '600' }}>
+                cadastro profissional
+              </p>
+            </div>
+          </Link>
+
         </div>
       </div>
     </div>

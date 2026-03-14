@@ -1,17 +1,35 @@
 'use client'
 
 import { useState } from 'react'
-import { supabase } from '@/lib/supabase'
-import { Button } from '@/components/ui/button'
+import { createClient } from '@supabase/supabase-js'
 import { useRouter } from 'next/navigation'
+import { Loader2, ArrowLeft, CheckCircle } from 'lucide-react'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
+
+const especialidades = [
+  'Cabelo',
+  'Maquiagem', 
+  'Manicure',
+  'Pedicure',
+  'Design de Sobrancelhas',
+  'Depilação',
+  'Massagem',
+  'Outro'
+]
 
 export default function CadastroProfissional() {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
+  const [success, setSuccess] = useState(false)
   const [formData, setFormData] = useState({
     nome: '',
     email: '',
     telefone: '',
+    cidade: '',
     senha: '',
     especialidade: '',
     preco: '',
@@ -34,40 +52,66 @@ export default function CadastroProfissional() {
 
       const userId = authData.user.id
 
-      // 2. Criar profile
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .insert({
-          id: userId,
-          nome: formData.nome,
-          tipo: 'profissional',
-          telefone: formData.telefone
-        })
-
-      if (profileError) throw profileError
-
-      // 3. Criar professional
+      // 2. Criar registro na tabela professionals (AGORA COM NOME, TELEFONE E CIDADE!)
       const { error: profError } = await supabase
         .from('professionals')
         .insert({
           id: userId,
-          especialidade: formData.especialidade.split(',').map(e => e.trim()),
+          nome: formData.nome,
+          email: formData.email,
+          telefone: formData.telefone,
+          cidade: formData.cidade,
+          especialidade: formData.especialidade ? [formData.especialidade] : [],
           bio: formData.bio,
-          preco_hora: parseInt(formData.preco),
+          preco_hora: formData.preco ? parseFloat(formData.preco) : null,
           ativo: true,
-          avaliacao: 5.0
+          avaliacao: 5.0,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
         })
 
-      if (profError) throw profError
+      if (profError) {
+        console.error('Erro professionals:', profError)
+        throw new Error('Erro ao criar perfil: ' + profError.message)
+      }
 
-      alert('Cadastro realizado com sucesso! Faça login para continuar.')
-      router.push('/')
+      // 3. Logar automaticamente
+      const { error: loginError } = await supabase.auth.signInWithPassword({
+        email: formData.email,
+        password: formData.senha,
+      })
+
+      if (loginError) throw loginError
+
+      setSuccess(true)
+      
+      // Redireciona após 2 segundos
+      setTimeout(() => {
+        router.push('/profissional/dashboard')
+      }, 2000)
       
     } catch (error: any) {
+      console.error('Erro completo:', error)
       alert('Erro no cadastro: ' + error.message)
     } finally {
       setLoading(false)
     }
+  }
+
+  if (success) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center p-4">
+        <div className="bg-white rounded-lg shadow-xl p-8 text-center max-w-md w-full">
+          <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
+          <h2 className="text-2xl font-bold text-gray-800 mb-2">Cadastro Realizado!</h2>
+          <p className="text-gray-600 mb-4">Sua conta profissional foi criada com sucesso.</p>
+          <p className="text-sm text-gray-500">Redirecionando para o dashboard...</p>
+          <div className="mt-4 w-full bg-gray-200 rounded-full h-2">
+            <div className="bg-gradient-to-r from-pink-500 to-purple-600 h-2 rounded-full animate-pulse w-full"></div>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -75,56 +119,68 @@ export default function CadastroProfissional() {
       {/* Header */}
       <header className="bg-gradient-to-r from-pink-500 to-purple-600 text-white p-4 shadow-lg">
         <div className="max-w-4xl mx-auto flex justify-between items-center">
-          <div>
-            <h1 className="text-2xl font-bold">Beleza Connect</h1>
-            <p className="text-sm opacity-90">Cadastro de Profissional</p>
+          <div className="flex items-center gap-4">
+            <button 
+              onClick={() => router.push('/')}
+              className="bg-white/20 hover:bg-white/30 p-2 rounded-lg transition-colors"
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+            <div>
+              <h1 className="text-2xl font-bold">Beleza Connect</h1>
+              <p className="text-sm opacity-90">Cadastro de Profissional</p>
+            </div>
           </div>
-          <Button 
-            variant="secondary" 
-            className="bg-white text-pink-600 hover:bg-gray-100"
-            onClick={() => router.push('/')}
-          >
-            Voltar
-          </Button>
         </div>
       </header>
 
       {/* Formulário */}
-      <main className="max-w-2xl mx-auto p-4 mt-8">
+      <main className="max-w-2xl mx-auto p-4 mt-8 mb-12">
         <div className="bg-white rounded-lg shadow-md p-6">
-          <h2 className="text-2xl font-bold text-gray-800 mb-6">Crie sua conta profissional</h2>
+          <div className="mb-6">
+            <h2 className="text-2xl font-bold text-gray-800">Crie sua conta profissional</h2>
+            <p className="text-gray-600 mt-1">Preencha seus dados para começar a atender clientes</p>
+          </div>
           
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-5">
+            {/* Nome */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Nome completo</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Nome completo *
+              </label>
               <input
                 type="text"
                 required
-                className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500 text-gray-900 bg-white"
-                placeholder="Seu nome"
+                className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500 text-gray-900 bg-white"
+                placeholder="Seu nome completo"
                 value={formData.nome}
                 onChange={(e) => setFormData({...formData, nome: e.target.value})}
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            {/* Email e Telefone */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Email *
+                </label>
                 <input
                   type="email"
                   required
-                  className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500 text-gray-900 bg-white"
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500 text-gray-900 bg-white"
                   placeholder="seu@email.com"
                   value={formData.email}
                   onChange={(e) => setFormData({...formData, email: e.target.value})}
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Telefone</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Telefone *
+                </label>
                 <input
                   type="tel"
                   required
-                  className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500 text-gray-900 bg-white"
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500 text-gray-900 bg-white"
                   placeholder="(11) 99999-9999"
                   value={formData.telefone}
                   onChange={(e) => setFormData({...formData, telefone: e.target.value})}
@@ -132,70 +188,110 @@ export default function CadastroProfissional() {
               </div>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Senha</label>
-              <input
-                type="password"
-                required
-                minLength={6}
-                className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500 text-gray-900 bg-white"
-                placeholder="Mínimo 6 caracteres"
-                value={formData.senha}
-                onChange={(e) => setFormData({...formData, senha: e.target.value})}
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
+            {/* Cidade e Senha */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Especialidades</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Cidade *
+                </label>
                 <input
                   type="text"
                   required
-                  className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500 text-gray-900 bg-white"
-                  placeholder="Maquiagem, Cabelo, Unha"
-                  value={formData.especialidade}
-                  onChange={(e) => setFormData({...formData, especialidade: e.target.value})}
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500 text-gray-900 bg-white"
+                  placeholder="São Paulo"
+                  value={formData.cidade}
+                  onChange={(e) => setFormData({...formData, cidade: e.target.value})}
                 />
-                <p className="text-xs text-gray-500 mt-1">Separe por vírgula</p>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Preço por hora (R$)</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Senha *
+                </label>
+                <input
+                  type="password"
+                  required
+                  minLength={6}
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500 text-gray-900 bg-white"
+                  placeholder="Mínimo 6 caracteres"
+                  value={formData.senha}
+                  onChange={(e) => setFormData({...formData, senha: e.target.value})}
+                />
+              </div>
+            </div>
+
+            {/* Especialidade e Preço */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Especialidade *
+                </label>
+                <select
+                  required
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500 text-gray-900 bg-white"
+                  value={formData.especialidade}
+                  onChange={(e) => setFormData({...formData, especialidade: e.target.value})}
+                >
+                  <option value="">Selecione...</option>
+                  {especialidades.map(esp => (
+                    <option key={esp} value={esp}>{esp}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Preço por hora (R$)
+                </label>
                 <input
                   type="number"
-                  required
                   min="1"
-                  className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500 text-gray-900 bg-white"
-                  placeholder="150"
+                  step="0.01"
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500 text-gray-900 bg-white"
+                  placeholder="150,00"
                   value={formData.preco}
                   onChange={(e) => setFormData({...formData, preco: e.target.value})}
                 />
               </div>
             </div>
 
+            {/* Bio */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Bio / Descrição</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Sobre você (Bio) *
+              </label>
               <textarea
                 required
                 rows={4}
-                className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500 text-gray-900 bg-white"
-                placeholder="Fale sobre sua experiência, serviços oferecidos..."
+                className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500 text-gray-900 bg-white resize-vertical"
+                placeholder="Conte sobre sua experiência, formação, serviços que oferece..."
                 value={formData.bio}
                 onChange={(e) => setFormData({...formData, bio: e.target.value})}
               />
             </div>
 
-            <Button
+            {/* Botão Submit */}
+            <button
               type="submit"
-              className="w-full bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-600 hover:to-purple-700 text-white py-3 text-lg font-semibold"
               disabled={loading}
+              className="w-full bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-600 hover:to-purple-700 text-white py-3 px-4 rounded-lg text-lg font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
-              {loading ? 'Cadastrando...' : 'Criar conta profissional'}
-            </Button>
+              {loading ? (
+                <>
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  Criando conta...
+                </>
+              ) : (
+                'Criar conta profissional'
+              )}
+            </button>
 
-            <p className="text-center text-sm text-gray-600">
+            <p className="text-center text-sm text-gray-600 pt-2">
               Já tem conta?{' '}
-              <button type="button" className="text-pink-600 hover:underline font-medium">
-                Faça login
+              <button 
+                type="button" 
+                onClick={() => router.push('/login')}
+                className="text-pink-600 hover:underline font-medium"
+              >
+                Faça login aqui
               </button>
             </p>
           </form>

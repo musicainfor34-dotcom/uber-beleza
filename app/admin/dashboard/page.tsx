@@ -1,14 +1,18 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { supabase } from '@/lib/supabase'
+import { createClient } from '@supabase/supabase-js'
 import { 
   Users, 
   Scissors, 
   Calendar, 
-  DollarSign,
-  TrendingUp
+  DollarSign
 } from 'lucide-react'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
 
 export default function AdminDashboard() {
   const [stats, setStats] = useState({
@@ -17,28 +21,68 @@ export default function AdminDashboard() {
     agendamentosHoje: 0,
     faturamentoMes: 0
   })
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     loadStats()
   }, [])
 
   async function loadStats() {
-    // Buscar estatísticas reais do Supabase
-    const { count: profissionaisCount } = await supabase
-      .from('profissionais')
-      .select('*', { count: 'exact', head: true })
+    try {
+      // 1. Contar PROFISSIONAIS (tabela professionals)
+      const { count: profissionaisCount, error: profError } = await supabase
+        .from('professionals')
+        .select('*', { count: 'exact', head: true })
 
-    const { count: clientesCount } = await supabase
-      .from('profiles')
-      .select('*', { count: 'exact', head: true })
-      .eq('role', 'cliente')
+      if (profError) {
+        console.error('Erro ao buscar profissionais:', profError)
+      }
 
-    setStats({
-      totalProfissionais: profissionaisCount || 0,
-      totalClientes: clientesCount || 0,
-      agendamentosHoje: 0, // Você pode implementar depois
-      faturamentoMes: 0    // Você pode implementar depois
-    })
+      // 2. Contar CLIENTES (usuários que NÃO são profissionais)
+      // Buscamos todos os IDs de profissionais primeiro
+      const { data: profissionaisIds } = await supabase
+        .from('professionals')
+        .select('id')
+
+      const profissionaisIdsList = profissionaisIds?.map(p => p.id) || []
+
+      // Agora contamos usuários que não estão nessa lista
+      let clientesCount = 0
+      if (profissionaisIdsList.length > 0) {
+        const { count } = await supabase
+          .from('profiles')
+          .select('*', { count: 'exact', head: true })
+          .not('id', 'in', `(${profissionaisIdsList.join(',')})`)
+        
+        clientesCount = count || 0
+      } else {
+        // Se não há profissionais, conta todos da profiles
+        const { count } = await supabase
+          .from('profiles')
+          .select('*', { count: 'exact', head: true })
+        
+        clientesCount = count || 0
+      }
+
+      // 3. Agendamentos de hoje (você pode implementar quando criar a tabela)
+      const hoje = new Date().toISOString().split('T')[0]
+      const { count: agendamentosCount } = await supabase
+        .from('agendamentos')
+        .select('*', { count: 'exact', head: true })
+        .eq('data', hoje)
+
+      setStats({
+        totalProfissionais: profissionaisCount || 0,
+        totalClientes: clientesCount,
+        agendamentosHoje: agendamentosCount || 0,
+        faturamentoMes: 0 // Implementar quando tiver tabela de pagamentos
+      })
+
+    } catch (error) {
+      console.error('Erro ao carregar estatísticas:', error)
+    } finally {
+      setLoading(false)
+    }
   }
 
   const cards = [
@@ -46,31 +90,39 @@ export default function AdminDashboard() {
       label: 'Profissionais',
       value: stats.totalProfissionais,
       icon: Scissors,
-      color: 'from-pink-500 to-rose-600',
-      bgColor: 'bg-pink-500'
+      bgColor: 'bg-pink-500',
+      textColor: 'text-pink-400'
     },
     {
       label: 'Clientes',
       value: stats.totalClientes,
       icon: Users,
-      color: 'from-purple-500 to-violet-600',
-      bgColor: 'bg-purple-500'
+      bgColor: 'bg-purple-500',
+      textColor: 'text-purple-400'
     },
     {
       label: 'Agendamentos Hoje',
       value: stats.agendamentosHoje,
       icon: Calendar,
-      color: 'from-blue-500 to-cyan-600',
-      bgColor: 'bg-blue-500'
+      bgColor: 'bg-blue-500',
+      textColor: 'text-blue-400'
     },
     {
       label: 'Faturamento Mês',
       value: `R$ ${stats.faturamentoMes}`,
       icon: DollarSign,
-      color: 'from-green-500 to-emerald-600',
-      bgColor: 'bg-green-500'
+      bgColor: 'bg-green-500',
+      textColor: 'text-green-400'
     }
   ]
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-pink-500"></div>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-8">
@@ -89,9 +141,9 @@ export default function AdminDashboard() {
           >
             <div className="flex items-center justify-between mb-4">
               <div className={`w-12 h-12 rounded-xl ${card.bgColor} bg-opacity-20 flex items-center justify-center`}>
-                <card.icon className={`w-6 h-6 ${card.bgColor.replace('bg-', 'text-')}`} />
+                <card.icon className={`w-6 h-6 ${card.textColor}`} />
               </div>
-              <span className="text-xs text-gray-500 font-medium">+12%</span>
+              <span className="text-xs text-gray-500 font-medium">+0%</span>
             </div>
             <h3 className="text-2xl font-bold text-white mb-1">{card.value}</h3>
             <p className="text-gray-400 text-sm">{card.label}</p>
@@ -111,21 +163,21 @@ export default function AdminDashboard() {
               <Users className="w-5 h-5 text-pink-400" />
             </div>
             <div>
-              <h3 className="font-medium text-white">Adicionar Profissional</h3>
-              <p className="text-sm text-gray-400">Cadastrar novo profissional</p>
+              <h3 className="font-medium text-white">Gerenciar Profissionais</h3>
+              <p className="text-sm text-gray-400">Ver todos os profissionais</p>
             </div>
           </a>
 
           <a
-            href="/admin/servicos"
+            href="/admin/clientes"
             className="flex items-center gap-4 p-4 bg-gray-700 hover:bg-gray-600 rounded-xl transition-all group"
           >
             <div className="w-10 h-10 rounded-full bg-purple-500 bg-opacity-20 flex items-center justify-center group-hover:scale-110 transition-transform">
-              <Scissors className="w-5 h-5 text-purple-400" />
+              <Users className="w-5 h-5 text-purple-400" />
             </div>
             <div>
-              <h3 className="font-medium text-white">Gerenciar Serviços</h3>
-              <p className="text-sm text-gray-400">Editar preços e descrições</p>
+              <h3 className="font-medium text-white">Ver Clientes</h3>
+              <p className="text-sm text-gray-400">Lista de clientes cadastrados</p>
             </div>
           </a>
 
@@ -138,27 +190,68 @@ export default function AdminDashboard() {
             </div>
             <div>
               <h3 className="font-medium text-white">Ver Agendamentos</h3>
-              <p className="text-sm text-gray-400">Todas as reservas do dia</p>
+              <p className="text-sm text-gray-400">Todas as reservas</p>
             </div>
           </a>
         </div>
       </div>
 
-      {/* Gráfico ou Lista (placeholder) */}
-      <div className="bg-gray-800 rounded-2xl p-6 border border-gray-700">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-xl font-bold text-white">Agendamentos Recentes</h2>
-          <a href="/admin/agendamentos" className="text-pink-400 hover:text-pink-300 text-sm font-medium">
-            Ver todos →
-          </a>
-        </div>
-        
-        <div className="text-center py-12 text-gray-500">
-          <Calendar className="w-12 h-12 mx-auto mb-3 opacity-50" />
-          <p>Nenhum agendamento recente</p>
-          <p className="text-sm mt-1">Os agendamentos aparecerão aqui quando começarem</p>
-        </div>
+      {/* Lista de Profissionais Recentes */}
+      <ProfissionaisRecentes />
+    </div>
+  )
+}
+
+// Componente para mostrar profissionais recentes
+function ProfissionaisRecentes() {
+  const [profissionais, setProfissionais] = useState<any[]>([])
+
+  useEffect(() => {
+    loadProfissionais()
+  }, [])
+
+  async function loadProfissionais() {
+    const { data } = await supabase
+      .from('professionals')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(5)
+    
+    setProfissionais(data || [])
+  }
+
+  return (
+    <div className="bg-gray-800 rounded-2xl p-6 border border-gray-700">
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-xl font-bold text-white">Profissionais Recentes</h2>
+        <a href="/admin/profissionais" className="text-pink-400 hover:text-pink-300 text-sm font-medium">
+          Ver todos →
+        </a>
       </div>
+      
+      {profissionais.length === 0 ? (
+        <div className="text-center py-8 text-gray-500">
+          <Scissors className="w-12 h-12 mx-auto mb-3 opacity-50" />
+          <p>Nenhum profissional cadastrado</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {profissionais.map((prof) => (
+            <div key={prof.id} className="flex items-center gap-4 p-4 bg-gray-700 rounded-xl">
+              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center text-white font-bold">
+                {prof.nome?.charAt(0).toUpperCase() || 'P'}
+              </div>
+              <div className="flex-1">
+                <h4 className="text-white font-medium">{prof.nome}</h4>
+                <p className="text-gray-400 text-sm">{prof.especialidade?.[0]} • {prof.cidade}</p>
+              </div>
+              <span className={`px-3 py-1 rounded-full text-xs ${prof.ativo ? 'bg-green-500 bg-opacity-20 text-green-400' : 'bg-red-500 bg-opacity-20 text-red-400'}`}>
+                {prof.ativo ? 'Ativo' : 'Inativo'}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
