@@ -49,7 +49,6 @@ export default function DashboardProfissional() {
   const [profissional, setProfissional] = useState<any>(null)
   const [agendamentos, setAgendamentos] = useState<Agendamento[]>([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string>('')
   const [stats, setStats] = useState({
     hoje: 0,
     total: 0,
@@ -88,47 +87,48 @@ export default function DashboardProfissional() {
 
   async function fetchProfissional() {
     try {
-      console.log('Buscando profissional com user_id:', user.id)
-      
-      // Tenta buscar pelo user_id primeiro
-      let { data, error } = await supabase
+      console.log('Buscando profissional...')
+      console.log('User ID:', user.id)
+      console.log('User Email:', user.email)
+
+      // Busca 1: Tenta pelo user_id
+      const { data: dataById, error: errorById } = await supabase
         .from('professionals')
         .select('*')
         .eq('user_id', user.id)
-        .single()
+        .maybeSingle()
 
-      // Se não encontrar, tenta buscar pelo email como fallback
-      if (!data && !error) {
-        const { data: dataByEmail, error: errorByEmail } = await supabase
-          .from('professionals')
-          .select('*')
-          .eq('email', user.email)
-          .single()
-        
-        if (dataByEmail) {
-          data = dataByEmail
-          error = errorByEmail
-        }
+      if (dataById) {
+        console.log('Profissional encontrado por user_id:', dataById)
+        setProfissional(dataById)
+        setLoading(false)
+        return
       }
 
-      if (error) {
-        console.error('Erro na query:', error)
-        // Se for erro de "não encontrado", não trata como erro crítico
-        if (error.code === 'PGRST116') {
-          setProfissional(null)
-        } else {
-          setError('Erro ao buscar dados do profissional')
-        }
-      } else if (data) {
-        console.log('Profissional encontrado:', data)
-        setProfissional(data)
-      } else {
-        setProfissional(null)
+      // Se não achou por user_id, tenta por email
+      console.log('Não achou por user_id, tentando por email...')
+      const { data: dataByEmail, error: errorByEmail } = await supabase
+        .from('professionals')
+        .select('*')
+        .eq('email', user.email)
+        .maybeSingle()
+
+      if (dataByEmail) {
+        console.log('Profissional encontrado por email:', dataByEmail)
+        setProfissional(dataByEmail)
+        setLoading(false)
+        return
       }
+
+      // Se chegou aqui, não encontrou o profissional
+      console.log('Profissional não encontrado')
+      setProfissional(null)
+      setLoading(false)
+
     } catch (err) {
-      console.error('Erro ao buscar profissional:', err)
-      setError('Erro ao carregar dados')
-    } finally {
+      console.error('Erro inesperado:', err)
+      // Mesmo com erro, não mostra tela de erro, mostra "cadastro incompleto"
+      setProfissional(null)
       setLoading(false)
     }
   }
@@ -224,24 +224,7 @@ export default function DashboardProfissional() {
     )
   }
 
-  if (error) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-        <div className="text-center bg-white p-8 rounded-2xl shadow-lg max-w-md">
-          <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
-          <p className="text-lg text-gray-700 mb-2">{error}</p>
-          <button 
-            onClick={fetchProfissional}
-            className="px-4 py-2 bg-purple-600 text-white rounded-lg font-semibold hover:bg-purple-700"
-          >
-            Tentar Novamente
-          </button>
-        </div>
-      </div>
-    )
-  }
-
-  // Se não encontrou o profissional, mostra opção de completar cadastro
+  // Se não encontrou o profissional, mostra tela de cadastro
   if (!profissional) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
@@ -270,17 +253,11 @@ export default function DashboardProfissional() {
             </button>
           </div>
 
-          <div className="mt-6 p-4 bg-gray-50 rounded-lg text-left text-sm text-gray-600">
-            <p className="font-semibold mb-1">Debug:</p>
-            <p>User ID: {user?.id}</p>
-            <p>Email: {user?.email}</p>
-            <button 
-              onClick={fetchProfissional}
-              className="mt-2 text-purple-600 hover:underline flex items-center gap-1"
-            >
-              <RefreshCw className="w-3 h-3" />
-              Tentar buscar novamente
-            </button>
+          {/* Debug info */}
+          <div className="mt-6 p-4 bg-gray-50 rounded-lg text-left text-xs text-gray-500">
+            <p className="font-semibold mb-1">Debug Info:</p>
+            <p>User ID: {user?.id || 'N/A'}</p>
+            <p>Email: {user?.email || 'N/A'}</p>
           </div>
         </div>
       </div>
