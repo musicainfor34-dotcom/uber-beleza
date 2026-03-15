@@ -26,62 +26,81 @@ export default function AdminDashboard() {
   useEffect(() => {
     loadStats()
   }, [])
-async function loadStats() {
-  try {
-    // 1. Contar PROFISSIONAIS (buscando array e contando)
-    const { data: profissionaisData } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('tipo', 'profissional')
-    
-    const profissionaisCount = profissionaisData?.length || 0
 
-    // 2. Contar CLIENTES (todos da profiles)
-    const { data: clientesData } = await supabase
-      .from('profiles')
-      .select('id')
-    
-    const clientesCount = clientesData?.length || 0
+  async function loadStats() {
+    try {
+      // 1. Contar PROFISSIONAIS das DUAS tabelas (profiles + professionals)
+      const { data: profissionaisProfiles } = await supabase
+        .from('profiles')
+        .select('id, nome')
+        .eq('tipo', 'profissional')
+      
+      const { data: profissionaisAntigos } = await supabase
+        .from('professionals')
+        .select('id, nome')
+      
+      // Combinar e remover duplicados pelo nome
+      const todosProfissionais = [...(profissionaisProfiles || [])]
+      
+      if (profissionaisAntigos) {
+        profissionaisAntigos.forEach((prof: any) => {
+          const jaExiste = todosProfissionais.some((p: any) => 
+            p.nome?.toLowerCase() === prof.nome?.toLowerCase()
+          )
+          if (!jaExiste) {
+            todosProfissionais.push(prof)
+          }
+        })
+      }
+      
+      const profissionaisCount = todosProfissionais.length
 
-    // 3. Agendamentos de HOJE
-    const hoje = new Date().toISOString().split('T')[0]
-    const { data: agendamentosData } = await supabase
-      .from('agendamentos')
-      .select('id')
-      .eq('data_agendamento', hoje)
-      .neq('status', 'cancelado')
-    
-    const agendamentosCount = agendamentosData?.length || 0
+      // 2. Contar CLIENTES (todos da profiles)
+      const { data: clientesData } = await supabase
+        .from('profiles')
+        .select('id')
+      
+      const clientesCount = clientesData?.length || 0
 
-    // 4. FATURAMENTO DO MÊS
-    const primeiroDiaMes = new Date()
-    primeiroDiaMes.setDate(1)
-    const inicioMes = primeiroDiaMes.toISOString().split('T')[0]
-    
-    const { data: faturamentoData } = await supabase
-      .from('agendamentos')
-      .select('valor_total')
-      .gte('data_agendamento', inicioMes)
-      .in('status', ['confirmado', 'concluido'])
+      // 3. Agendamentos de HOJE
+      const hoje = new Date().toISOString().split('T')[0]
+      const { data: agendamentosData } = await supabase
+        .from('agendamentos')
+        .select('id')
+        .eq('data_agendamento', hoje)
+        .neq('status', 'cancelado')
+      
+      const agendamentosCount = agendamentosData?.length || 0
 
-    let faturamentoMes = 0
-    if (faturamentoData) {
-      faturamentoMes = faturamentoData.reduce((sum, ag) => sum + (ag.valor_total || 0), 0)
+      // 4. FATURAMENTO DO MÊS
+      const primeiroDiaMes = new Date()
+      primeiroDiaMes.setDate(1)
+      const inicioMes = primeiroDiaMes.toISOString().split('T')[0]
+      
+      const { data: faturamentoData } = await supabase
+        .from('agendamentos')
+        .select('valor_total')
+        .gte('data_agendamento', inicioMes)
+        .in('status', ['confirmado', 'concluido'])
+
+      let faturamentoMes = 0
+      if (faturamentoData) {
+        faturamentoMes = faturamentoData.reduce((sum, ag) => sum + (ag.valor_total || 0), 0)
+      }
+
+      setStats({
+        totalProfissionais: profissionaisCount,
+        totalClientes: clientesCount,
+        agendamentosHoje: agendamentosCount,
+        faturamentoMes: faturamentoMes
+      })
+
+    } catch (error) {
+      console.error('Erro ao carregar estatísticas:', error)
+    } finally {
+      setLoading(false)
     }
-
-    setStats({
-      totalProfissionais: profissionaisCount,
-      totalClientes: clientesCount,
-      agendamentosHoje: agendamentosCount,
-      faturamentoMes: faturamentoMes
-    })
-
-  } catch (error) {
-    console.error('Erro ao carregar estatísticas:', error)
-  } finally {
-    setLoading(false)
   }
-}
 
   const cards = [
     {
@@ -209,14 +228,47 @@ function ProfissionaisRecentes() {
   }, [])
 
   async function loadProfissionais() {
-    const { data } = await supabase
-     .from('profiles')
-      .select('*')
-      .eq('tipo', 'profissional')
-      .order('created_at', { ascending: false })
-      .limit(5)
-    
-    setProfissionais(data || [])
+    try {
+      // Buscar das DUAS tabelas
+      const { data: profissionaisProfiles } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('tipo', 'profissional')
+        .order('created_at', { ascending: false })
+      
+      const { data: profissionaisAntigos } = await supabase
+        .from('professionals')
+        .select('*')
+        .order('created_at', { ascending: false })
+      
+      // Combinar e remover duplicados
+      const listaProfissionais: any[] = [...(profissionaisProfiles || [])]
+      
+      if (profissionaisAntigos) {
+        profissionaisAntigos.forEach((prof: any) => {
+          const jaExiste = listaProfissionais.some((p: any) => 
+            p.nome?.toLowerCase() === prof.nome?.toLowerCase()
+          )
+          if (!jaExiste) {
+            listaProfissionais.push({
+              ...prof,
+              tabela_origem: 'professionals'
+            })
+          }
+        })
+      }
+      
+      // Ordenar por data e pegar os 5 mais recentes
+      listaProfissionais.sort((a, b) => {
+        const dateA = new Date(a.created_at || 0)
+        const dateB = new Date(b.created_at || 0)
+        return dateB.getTime() - dateA.getTime()
+      })
+      
+      setProfissionais(listaProfissionais.slice(0, 5))
+    } catch (error) {
+      console.error('Erro ao carregar profissionais recentes:', error)
+    }
   }
 
   return (
@@ -242,7 +294,12 @@ function ProfissionaisRecentes() {
               </div>
               <div className="flex-1">
                 <h4 className="text-white font-medium">{prof.nome}</h4>
-                <p className="text-gray-400 text-sm">{prof.especialidade?.[0]} • {prof.cidade}</p>
+                <p className="text-gray-400 text-sm">
+                  {Array.isArray(prof.especialidade) 
+                    ? prof.especialidade.join(', ') 
+                    : prof.especialidade || 'Sem especialidade'} 
+                  {prof.cidade && ` • ${prof.cidade}`}
+                </p>
               </div>
               <span className={`px-3 py-1 rounded-full text-xs ${prof.ativo ? 'bg-green-500 bg-opacity-20 text-green-400' : 'bg-red-500 bg-opacity-20 text-red-400'}`}>
                 {prof.ativo ? 'Ativo' : 'Inativo'}
