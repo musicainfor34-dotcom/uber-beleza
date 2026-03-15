@@ -28,24 +28,30 @@ export default function AdminDashboard() {
   }, [])
 async function loadStats() {
   try {
-    // 1. Contar PROFISSIONAIS
-    const { count: profissionaisCount } = await supabase
+    // 1. Contar PROFISSIONAIS (buscando array e contando)
+    const { data: profissionaisData } = await supabase
       .from('profiles')
-      .select('*', { count: 'exact', head: true })
+      .select('id')
       .eq('tipo', 'profissional')
+    
+    const profissionaisCount = profissionaisData?.length || 0
 
     // 2. Contar CLIENTES (todos da profiles)
-    const { count: clientesCount } = await supabase
+    const { data: clientesData } = await supabase
       .from('profiles')
-      .select('*', { count: 'exact', head: true })
+      .select('id')
+    
+    const clientesCount = clientesData?.length || 0
 
     // 3. Agendamentos de HOJE
     const hoje = new Date().toISOString().split('T')[0]
-    const { count: agendamentosCount } = await supabase
+    const { data: agendamentosData } = await supabase
       .from('agendamentos')
-      .select('*', { count: 'exact', head: true })
+      .select('id')
       .eq('data_agendamento', hoje)
       .neq('status', 'cancelado')
+    
+    const agendamentosCount = agendamentosData?.length || 0
 
     // 4. FATURAMENTO DO MÊS
     const primeiroDiaMes = new Date()
@@ -64,9 +70,9 @@ async function loadStats() {
     }
 
     setStats({
-      totalProfissionais: profissionaisCount || 0,
-      totalClientes: clientesCount || 0, // Agora vai aparecer!
-      agendamentosHoje: agendamentosCount || 0,
+      totalProfissionais: profissionaisCount,
+      totalClientes: clientesCount,
+      agendamentosHoje: agendamentosCount,
       faturamentoMes: faturamentoMes
     })
 
