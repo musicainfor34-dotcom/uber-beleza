@@ -7,17 +7,18 @@ import Link from 'next/link'
 
 interface Professional {
   id: string
-  nome: string           // CAMPO EM INGLÊS
-  email: string
+  nome: string
+  email: string | null
   telefone: string | null
   cidade: string | null
-  especialidade: string[] | null  // CAMPO EM INGLÊS (e array)
+  especialidade: string[] | null
   bio: string | null
   preco_hora: number | null
   avaliacao: number | null
   ativo: boolean | null
   endereco: string | null
   created_at: string | null
+  tabela_origem: string // Para identificar de qual tabela veio
 }
 
 export default function ProfissionaisAdmin() {
@@ -26,11 +27,11 @@ export default function ProfissionaisAdmin() {
   const [erro, setErro] = useState('')
   const [modalAberto, setModalAberto] = useState(false)
   
-  const [nome, setNome] = useState('')           // nome em vez de nome_completo
+  const [nome, setNome] = useState('')
   const [email, setEmail] = useState('')
   const [telefone, setTelefone] = useState('')
   const [cidade, setCidade] = useState('')
-  const [especialidade, setEspecialidade] = useState('')  // especialidade em vez de especialidades
+  const [especialidade, setEspecialidade] = useState('')
   const [bio, setBio] = useState('')
   const [precoHora, setPrecoHora] = useState('')
   const [avaliacao, setAvaliacao] = useState('5')
@@ -45,20 +46,96 @@ export default function ProfissionaisAdmin() {
     setLoading(true)
     setErro('')
     
-    // TABELA PROFESSIONALS (INGLÊS)
-    const { data, error } = await supabase
-      .from('professionals')
-      .select('*')
-      .order('created_at', { ascending: false })
-    
-    if (error) {
+    try {
+      // 1. Buscar da tabela professionals (Marcos e Edenilton - dados completos)
+      const { data: profissionaisAntigos, error: errorAntigos } = await supabase
+        .from('professionals')
+        .select('*')
+        .order('created_at', { ascending: false })
+
+      // 2. Buscar da tabela profiles (HELEN, Suelen, Susan... - cadastrados pelo app)
+      const { data: profissionaisNovos, error: errorNovos } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('tipo', 'profissional')
+        .order('created_at', { ascending: false })
+
+      if (errorAntigos) {
+        console.error('Erro ao carregar professionals:', errorAntigos)
+      }
+      
+      if (errorNovos) {
+        console.error('Erro ao carregar profiles:', errorNovos)
+      }
+
+      // 3. Combinar os dois resultados
+      const listaProfissionais: Professional[] = []
+
+      // Adicionar da tabela professionals (antiga)
+      if (profissionaisAntigos) {
+        profissionaisAntigos.forEach((p: any) => {
+          listaProfissionais.push({
+            id: p.id,
+            nome: p.nome,
+            email: p.email,
+            telefone: p.telefone,
+            cidade: p.cidade,
+            especialidade: p.especialidade,
+            bio: p.bio,
+            preco_hora: p.preco_hora,
+            avaliacao: p.avaliacao,
+            ativo: p.ativo ?? true,
+            endereco: p.endereco,
+            created_at: p.created_at,
+            tabela_origem: 'professionals'
+          })
+        })
+      }
+
+      // Adicionar da tabela profiles (nova)
+      if (profissionaisNovos) {
+        profissionaisNovos.forEach((p: any) => {
+          // Verificar se já não existe (pelo nome) para não duplicar
+          const jaExiste = listaProfissionais.some(existing => 
+            existing.nome?.toLowerCase() === p.nome?.toLowerCase()
+          )
+          
+          if (!jaExiste) {
+            listaProfissionais.push({
+              id: p.id,
+              nome: p.nome,
+              email: p.email || null,
+              telefone: p.telefone,
+              cidade: p.cidade,
+              especialidade: p.especialidade || [],
+              bio: p.bio,
+              preco_hora: p.preco_hora,
+              avaliacao: p.avaliacao,
+              ativo: p.ativo ?? true,
+              endereco: p.endereco,
+              created_at: p.created_at,
+              tabela_origem: 'profiles'
+            })
+          }
+        })
+      }
+
+      // Ordenar por data de criação (mais recente primeiro)
+      listaProfissionais.sort((a, b) => {
+        const dateA = new Date(a.created_at || 0)
+        const dateB = new Date(b.created_at || 0)
+        return dateB.getTime() - dateA.getTime()
+      })
+
+      console.log('Total de profissionais carregados:', listaProfissionais.length)
+      setProfissionais(listaProfissionais)
+
+    } catch (error: any) {
       console.error('Erro ao carregar:', error)
       setErro('Erro ao carregar: ' + error.message)
-    } else {
-      console.log('Profissionais carregados:', data?.length || 0, data)
-      setProfissionais(data || [])
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
   }
 
   async function salvarProfissional(e: React.FormEvent) {
@@ -68,13 +145,13 @@ export default function ProfissionaisAdmin() {
 
     const especArray = especialidade.split(',').map(s => s.trim()).filter(s => s)
 
-    // INSERT NA TABELA PROFESSIONALS
+    // Salvar na tabela professionals (mantém o padrão antigo)
     const { error } = await supabase.from('professionals').insert([{
-      nome: nome,                    // nome (não nome_completo)
+      nome: nome,
       email: email,
       telefone: telefone || null,
       cidade: cidade || null,
-      especialidade: especArray,     // especialidade (não especialidades)
+      especialidade: especArray,
       bio: bio || null,
       preco_hora: parseFloat(precoHora) || 0,
       avaliacao: parseFloat(avaliacao) || 5,
@@ -104,9 +181,12 @@ export default function ProfissionaisAdmin() {
     carregarProfissionais()
   }
 
-  async function alternarStatus(id: string, atual: boolean) {
+  async function alternarStatus(id: string, atual: boolean, tabelaOrigem: string) {
+    // Determinar qual tabela usar
+    const tabela = tabelaOrigem === 'profiles' ? 'profiles' : 'professionals'
+    
     const { error } = await supabase
-      .from('professionals')         // professionals
+      .from(tabela)
       .update({ ativo: !atual })
       .eq('id', id)
     
@@ -117,11 +197,14 @@ export default function ProfissionaisAdmin() {
     }
   }
 
-  async function excluir(id: string) {
+  async function excluir(id: string, tabelaOrigem: string) {
     if (!confirm('Tem certeza que deseja excluir?')) return
     
+    // Determinar qual tabela usar
+    const tabela = tabelaOrigem === 'profiles' ? 'profiles' : 'professionals'
+    
     const { error } = await supabase
-      .from('professionals')         // professionals
+      .from(tabela)
       .delete()
       .eq('id', id)
     
@@ -210,15 +293,16 @@ export default function ProfissionaisAdmin() {
                 <div key={p.id} style={{ backgroundColor: '#111827', border: '1px solid #374151', borderRadius: '12px', padding: '24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flex: 1 }}>
                     <div style={{ width: '48px', height: '48px', background: 'linear-gradient(to bottom right, #ec4899, #9333ea)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '18px', flexShrink: 0 }}>
-                      {p.nome?.charAt(0).toUpperCase() || 'P'}  {/* USANDO nome */}
+                      {p.nome?.charAt(0).toUpperCase() || 'P'}
                     </div>
                     <div style={{ flex: 1 }}>
                       <h3 style={{ fontWeight: 'bold', color: 'white', margin: '0 0 4px 0' }}>
-                        {p.nome || 'Sem nome'}  {/* USANDO nome */}
+                        {p.nome || 'Sem nome'}
                       </h3>
-                      <p style={{ color: '#9ca3af', fontSize: '14px', margin: '0 0 4px 0' }}>{p.email}</p>
+                      {p.email && (
+                        <p style={{ color: '#9ca3af', fontSize: '14px', margin: '0 0 4px 0' }}>{p.email}</p>
+                      )}
                       <p style={{ color: '#6b7280', fontSize: '13px', margin: '0 0 8px 0' }}>
-                        {/* USANDO especialidade (array) */}
                         {Array.isArray(p.especialidade) ? p.especialidade.join(', ') : p.especialidade || 'Sem especialidade'} 
                         {p.cidade && ` • ${p.cidade}`}
                       </p>
@@ -232,13 +316,23 @@ export default function ProfissionaisAdmin() {
                         {p.telefone && (
                           <span style={{ color: '#6b7280', fontSize: '13px' }}>📞 {p.telefone}</span>
                         )}
+                        {/* Indicador sutil de origem (pode remover depois) */}
+                        <span style={{ 
+                          color: '#6b7280', 
+                          fontSize: '11px', 
+                          backgroundColor: 'rgba(55, 65, 81, 0.5)',
+                          padding: '2px 6px',
+                          borderRadius: '4px'
+                        }}>
+                          {p.tabela_origem === 'profiles' ? 'App' : 'Admin'}
+                        </span>
                       </div>
                     </div>
                   </div>
                   
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                     <button
-                      onClick={() => alternarStatus(p.id, p.ativo || false)}
+                      onClick={() => alternarStatus(p.id, p.ativo || false, p.tabela_origem)}
                       style={{ 
                         padding: '8px 16px', 
                         borderRadius: '8px', 
@@ -253,7 +347,7 @@ export default function ProfissionaisAdmin() {
                       {p.ativo ? '✓ Ativo' : 'Inativo'}
                     </button>
                     <button 
-                      onClick={() => excluir(p.id)} 
+                      onClick={() => excluir(p.id, p.tabela_origem)} 
                       style={{ padding: '8px', backgroundColor: 'rgba(239, 68, 68, 0.2)', color: '#f87171', borderRadius: '8px', border: 'none', cursor: 'pointer' }}
                       title="Excluir"
                     >
