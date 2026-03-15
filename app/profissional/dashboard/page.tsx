@@ -128,41 +128,53 @@ export default function DashboardProfissional() {
     }
   }
 
-  async function fetchAgendamentos() {
-    if (!profissional) return
-    
-    setRefreshing(true)
-    try {
-      const today = new Date().toISOString().split('T')[0]
-      
-      const { data, error } = await supabase
-        .from('agendamentos')
-        .select(`
-          *,
-          cliente:cliente_id (
-            email,
-            user_metadata
-          ),
-          servico:servico_id (nome, duracao_minutos)
-        `)
-        .eq('profissional_id', profissional.id)
-        .order('data_agendamento', { ascending: true })
-        .order('hora_inicio', { ascending: true })
+async function fetchAgendamentos() {
+  if (!profissional) return
+  
+  setRefreshing(true)
+  try {
+    // Query simplificada - sem joins complexos primeiro
+    const { data, error } = await supabase
+      .from('agendamentos')
+      .select('*')
+      .eq('profissional_id', profissional.id)
+      .order('data_agendamento', { ascending: true })
 
-      if (error) {
-        console.error('Erro ao buscar agendamentos:', error)
-        return
-      }
-
-      console.log('Agendamentos:', data)
-      setAgendamentos(data || [])
-
-    } catch (error) {
-      console.error('Erro:', error)
-    } finally {
-      setRefreshing(false)
+    if (error) {
+      console.error('Erro na query:', error)
+      return
     }
+
+    console.log('Agendamentos brutos:', data)
+    
+    // Se der certo, vamos buscar os dados do cliente separadamente
+    if (data && data.length > 0) {
+      const agendamentosCompletos = await Promise.all(
+        data.map(async (ag: any) => {
+          // Buscar dados do cliente
+          const { data: clienteData } = await supabase
+            .from('professionals')
+            .select('nome, email')
+            .eq('user_id', ag.cliente_id)
+            .single()
+            
+          return {
+            ...ag,
+            cliente: clienteData || { email: 'Cliente não encontrado', nome: '' }
+          }
+        })
+      )
+      setAgendamentos(agendamentosCompletos)
+    } else {
+      setAgendamentos([])
+    }
+
+  } catch (error) {
+    console.error('Erro:', error)
+  } finally {
+    setRefreshing(false)
   }
+}
 
   async function atualizarStatus(agendamentoId: string, novoStatus: string) {
     try {
