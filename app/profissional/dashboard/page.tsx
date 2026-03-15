@@ -10,12 +10,11 @@ import {
   Scissors, 
   LogOut, 
   MapPin, 
-  Phone,
   Clock,
   CheckCircle,
   XCircle,
-  AlertCircle,
-  RefreshCw
+  RefreshCw,
+  Bell
 } from 'lucide-react'
 
 const supabase = createClient(
@@ -49,6 +48,7 @@ export default function DashboardProfissional() {
   const [profissional, setProfissional] = useState<any>(null)
   const [agendamentos, setAgendamentos] = useState<Agendamento[]>([])
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [stats, setStats] = useState({
     hoje: 0,
     total: 0,
@@ -65,9 +65,36 @@ export default function DashboardProfissional() {
     }
   }, [user])
 
+  // Buscar agendamentos e configurar Realtime
   useEffect(() => {
     if (profissional) {
       fetchAgendamentos()
+      
+      // 🔔 Inscrição em tempo real - atualiza automaticamente quando cliente agenda
+      const channel = supabase
+        .channel(`agendamentos:${profissional.id}`)
+        .on('postgres_changes', 
+          { 
+            event: '*', 
+            schema: 'public', 
+            table: 'agendamentos',
+            filter: `profissional_id=eq.${profissional.id}`
+          },
+          (payload) => {
+            console.log('🔄 Novo agendamento detectado:', payload)
+            fetchAgendamentos() // Recarrega a lista automaticamente
+            
+            // Notificação visual se for novo
+            if (payload.eventType === 'INSERT') {
+              alert('📱 Novo agendamento recebido!')
+            }
+          }
+        )
+        .subscribe()
+
+      return () => {
+        supabase.removeChannel(channel)
+      }
     }
   }, [profissional])
 
@@ -80,61 +107,36 @@ export default function DashboardProfissional() {
       }
       setUser(session.user)
     } catch (err) {
-      console.error('Erro ao verificar usuário:', err)
       router.push('/login')
     }
   }
 
   async function fetchProfissional() {
     try {
-      console.log('Buscando profissional...')
-      console.log('User ID:', user.id)
-      console.log('User Email:', user.email)
-
-      // Busca 1: Tenta pelo user_id
-      const { data: dataById, error: errorById } = await supabase
+      const { data, error } = await supabase
         .from('professionals')
         .select('*')
         .eq('user_id', user.id)
         .maybeSingle()
 
-      if (dataById) {
-        console.log('Profissional encontrado por user_id:', dataById)
-        setProfissional(dataById)
-        setLoading(false)
-        return
+      if (data) {
+        console.log('✅ Profissional logado:', data.id, data.nome)
+        setProfissional(data)
       }
-
-      // Se não achou por user_id, tenta por email
-      console.log('Não achou por user_id, tentando por email...')
-      const { data: dataByEmail, error: errorByEmail } = await supabase
-        .from('professionals')
-        .select('*')
-        .eq('email', user.email)
-        .maybeSingle()
-
-      if (dataByEmail) {
-        console.log('Profissional encontrado por email:', dataByEmail)
-        setProfissional(dataByEmail)
-        setLoading(false)
-        return
-      }
-
-      // Se chegou aqui, não encontrou o profissional
-      console.log('Profissional não encontrado')
-      setProfissional(null)
-      setLoading(false)
-
     } catch (err) {
-      console.error('Erro inesperado:', err)
-      // Mesmo com erro, não mostra tela de erro, mostra "cadastro incompleto"
-      setProfissional(null)
+      console.error(err)
+    } finally {
       setLoading(false)
     }
   }
 
   async function fetchAgendamentos() {
+    if (!profissional) return
+    
+    setRefreshing(true)
     try {
+      console.log('🔍 Buscando agendamentos para profissional:', profissional.id)
+      
       const today = new Date().toISOString().split('T')[0]
       
       const { data, error } = await supabase
@@ -148,11 +150,17 @@ export default function DashboardProfissional() {
         .order('data_agendamento', { ascending: true })
         .order('hora_inicio', { ascending: true })
 
-      if (error) throw error
+      if (error) {
+        console.error('❌ Erro na query:', error)
+        return
+      }
 
+      console.log('📋 Agendamentos encontrados:', data?.length || 0, data)
+      
       const agendamentosData = data || []
       setAgendamentos(agendamentosData)
 
+      // Calcular estatísticas
       const hoje = agendamentosData.filter((a: Agendamento) => 
         a.data_agendamento === today && a.status !== 'cancelado'
       ).length
@@ -168,7 +176,9 @@ export default function DashboardProfissional() {
       })
 
     } catch (error) {
-      console.error('Erro ao buscar agendamentos:', error)
+      console.error('❌ Erro ao buscar:', error)
+    } finally {
+      setRefreshing(false)
     }
   }
 
@@ -183,7 +193,6 @@ export default function DashboardProfissional() {
       
       fetchAgendamentos()
     } catch (error) {
-      console.error('Erro ao atualizar status:', error)
       alert('Erro ao atualizar status')
     }
   }
@@ -224,41 +233,17 @@ export default function DashboardProfissional() {
     )
   }
 
-  // Se não encontrou o profissional, mostra tela de cadastro
   if (!profissional) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-        <div className="text-center bg-white p-8 rounded-2xl shadow-lg max-w-md w-full">
-          <div className="w-20 h-20 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Scissors className="w-10 h-10 text-purple-600" />
-          </div>
-          <h2 className="text-xl font-bold text-gray-800 mb-2">Complete seu cadastro</h2>
-          <p className="text-gray-500 mb-6">
-            Para acessar o painel do profissional, você precisa completar seu cadastro primeiro.
-          </p>
-          
-          <div className="space-y-3">
-            <button 
-              onClick={() => router.push('/cadastro-profissional')}
-              className="w-full px-4 py-3 bg-gradient-to-r from-purple-600 to-pink-500 text-white rounded-xl font-semibold hover:opacity-90 transition-opacity"
-            >
-              Completar Cadastro
-            </button>
-            
-            <button 
-              onClick={handleLogout}
-              className="w-full px-4 py-3 border border-gray-300 text-gray-700 rounded-xl font-semibold hover:bg-gray-50 transition-colors"
-            >
-              Sair e entrar com outra conta
-            </button>
-          </div>
-
-          {/* Debug info */}
-          <div className="mt-6 p-4 bg-gray-50 rounded-lg text-left text-xs text-gray-500">
-            <p className="font-semibold mb-1">Debug Info:</p>
-            <p>User ID: {user?.id || 'N/A'}</p>
-            <p>Email: {user?.email || 'N/A'}</p>
-          </div>
+        <div className="text-center bg-white p-8 rounded-2xl shadow-lg">
+          <h2 className="text-xl font-bold mb-4">Complete seu cadastro</h2>
+          <button 
+            onClick={() => router.push('/cadastro-profissional')}
+            className="px-6 py-3 bg-purple-600 text-white rounded-lg"
+          >
+            Completar Cadastro
+          </button>
         </div>
       </div>
     )
@@ -277,7 +262,7 @@ export default function DashboardProfissional() {
             <span className="hidden md:inline">Olá, {profissional.nome}</span>
             <button 
               onClick={handleLogout}
-              className="flex items-center gap-2 px-4 py-2 bg-white/20 hover:bg-white/30 rounded-lg transition-colors"
+              className="flex items-center gap-2 px-4 py-2 bg-white/20 hover:bg-white/30 rounded-lg"
             >
               <LogOut className="w-4 h-4" />
               <span className="hidden md:inline">Sair</span>
@@ -338,14 +323,27 @@ export default function DashboardProfissional() {
         <div className="grid md:grid-cols-3 gap-6">
           {/* Lista de Agendamentos */}
           <div className="md:col-span-2 space-y-4">
-            <h2 className="text-xl font-bold text-gray-800">Próximos Agendamentos</h2>
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-bold text-gray-800">Próximos Agendamentos</h2>
+              <button 
+                onClick={fetchAgendamentos}
+                disabled={refreshing}
+                className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+              >
+                <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+                Atualizar
+              </button>
+            </div>
             
             {agendamentos.length === 0 ? (
               <div className="bg-white rounded-xl p-8 text-center border border-gray-100 shadow-sm">
-                <Calendar className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                <Bell className="w-12 h-12 text-gray-300 mx-auto mb-3" />
                 <p className="text-gray-500">Nenhum agendamento ainda</p>
                 <p className="text-sm text-gray-400 mt-1">
-                  Quando clientes agendarem, aparecerão aqui
+                  Quando um cliente agendar, aparecerá aqui automaticamente
+                </p>
+                <p className="text-xs text-gray-400 mt-2">
+                  (ID do profissional: {profissional.id})
                 </p>
               </div>
             ) : (
@@ -402,14 +400,14 @@ export default function DashboardProfissional() {
                       <div className="flex gap-2 mt-3 pt-3 border-t border-gray-100">
                         <button
                           onClick={() => atualizarStatus(agendamento.id, 'confirmado')}
-                          className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium transition-colors"
+                          className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium"
                         >
                           <CheckCircle className="w-4 h-4" />
                           Confirmar
                         </button>
                         <button
                           onClick={() => atualizarStatus(agendamento.id, 'cancelado')}
-                          className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-medium transition-colors"
+                          className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-medium"
                         >
                           <XCircle className="w-4 h-4" />
                           Cancelar
@@ -421,7 +419,7 @@ export default function DashboardProfissional() {
                       <div className="flex gap-2 mt-3 pt-3 border-t border-gray-100">
                         <button
                           onClick={() => atualizarStatus(agendamento.id, 'concluido')}
-                          className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-medium transition-colors"
+                          className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-medium"
                         >
                           <CheckCircle className="w-4 h-4" />
                           Marcar como Concluído
@@ -470,7 +468,7 @@ export default function DashboardProfissional() {
               </div>
             </div>
 
-            <button className="w-full mt-6 px-4 py-2 border-2 border-purple-500 text-purple-600 rounded-lg font-medium hover:bg-purple-50 transition-colors flex items-center justify-center gap-2">
+            <button className="w-full mt-6 px-4 py-2 border-2 border-purple-500 text-purple-600 rounded-lg font-medium hover:bg-purple-50 flex items-center justify-center gap-2">
               <span>⚙️</span>
               Editar Perfil e Serviços
             </button>
