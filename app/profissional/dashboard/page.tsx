@@ -17,6 +17,7 @@ import {
   XCircle,
   RefreshCw,
   Bell
+  Trash2 
 } from 'lucide-react'
 
 const supabase = createClient(
@@ -176,19 +177,41 @@ async function fetchAgendamentos() {
   }
 }
 
-  async function atualizarStatus(agendamentoId: string, novoStatus: string) {
-    try {
-      const { error } = await supabase
-        .from('agendamentos')
-        .update({ status: novoStatus })
-        .eq('id', agendamentoId)
+async function atualizarStatus(agendamentoId: string, novoStatus: string) {
+  try {
+    const { error } = await supabase
+      .from('agendamentos')
+      .update({ status: novoStatus })
+      .eq('id', agendamentoId)
 
-      if (error) throw error
-      fetchAgendamentos()
-    } catch (error) {
-      alert('Erro ao atualizar status')
-    }
+    if (error) throw error
+    fetchAgendamentos()
+  } catch (error) {
+    alert('Erro ao atualizar status')
   }
+}
+
+// ➕ ADICIONAR ESSA FUNÇÃO NOVA - Deletar agendamento
+async function deletarAgendamento(agendamentoId: string) {
+  const confirmar = window.confirm('Tem certeza que deseja excluir este agendamento permanentemente?')
+  
+  if (!confirmar) return
+  
+  try {
+    const { error } = await supabase
+      .from('agendamentos')
+      .delete()
+      .eq('id', agendamentoId)
+
+    if (error) throw error
+    
+    alert('✅ Agendamento excluído com sucesso!')
+    fetchAgendamentos() // Atualiza a lista
+  } catch (error) {
+    console.error('Erro ao deletar:', error)
+    alert('❌ Erro ao excluir agendamento')
+  }
+}
 
   async function handleLogout() {
     await supabase.auth.signOut()
@@ -409,6 +432,17 @@ async function fetchAgendamentos() {
                         </button>
                       </div>
                     )}
+                    {/* 🗑️ BOTÃO DE EXCLUIR - aparece em todos os status */}
+<div className="flex gap-2 mt-3">
+  <button
+    onClick={() => deletarAgendamento(agendamento.id)}
+    className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-gray-500 hover:bg-gray-600 text-white rounded-lg text-sm font-medium transition-colors"
+    title="Excluir agendamento"
+  >
+    <Trash2 className="w-4 h-4" />
+    Excluir
+  </button>
+</div>
                   </div>
                 ))}
               </div>
