@@ -30,8 +30,9 @@ async function loadStats() {
   try {
     // 1. Contar PROFISSIONAIS
     const { count: profissionaisCount } = await supabase
-      .from('professionals')
+      .from('profiles')
       .select('*', { count: 'exact', head: true })
+      .eq('tipo', 'profissional')
 
     // 2. Contar CLIENTES (todos da profiles)
     const { count: clientesCount } = await supabase
@@ -203,8 +204,9 @@ function ProfissionaisRecentes() {
 
   async function loadProfissionais() {
     const { data } = await supabase
-      .from('professionals')
+     .from('profiles')
       .select('*')
+      .eq('tipo', 'profissional')
       .order('created_at', { ascending: false })
       .limit(5)
     
