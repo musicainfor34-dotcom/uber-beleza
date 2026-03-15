@@ -4,20 +4,20 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@supabase/supabase-js'
 import { 
-  Calendar, 
-  Users, 
-  Star, 
-  Scissors, 
-  LogOut, 
-  MapPin, 
+  Calendar,
+  Users,
+  Star,
+  Scissors,
+  LogOut,
+  MapPin,
   Phone,
   Clock,
   DollarSign,
   CheckCircle,
   XCircle,
   RefreshCw,
-  Bell
-  Trash2 
+  Bell,   // ← ADICIONAR VÍRGULA AQUI
+  Trash2
 } from 'lucide-react'
 
 const supabase = createClient(
