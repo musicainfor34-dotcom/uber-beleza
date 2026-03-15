@@ -13,27 +13,28 @@ import {
   XCircle,
   Clock3,
   ArrowLeft,
-  Filter
+  Filter,
+  Trash2
 } from 'lucide-react'
 import Link from 'next/link'
 
 interface Agendamento {
   id: string
   data_agendamento: string
-  horario: string
+  hora_inicio: string
+  hora_fim: string
   status: 'pendente' | 'confirmado' | 'cancelado' | 'concluido'
   valor_total: number
-  cliente: {
-    nome: string
-    telefone: string
-  }
-  profissional: {
-    nome: string
-  }
-  servico: {
-    nome: string
-    duracao: number
-  }
+  endereco: string
+  bairro: string
+  cidade: string
+  cliente_id: string
+  profissional_id: string
+  servico_id: string
+  // Dados buscados separadamente
+  cliente?: any
+  profissional?: any
+  servico?: any
 }
 
 export default function GerenciarAgendamentos() {
@@ -46,20 +47,51 @@ export default function GerenciarAgendamentos() {
   }, [])
 
   async function carregarAgendamentos() {
-    const { data, error } = await supabase
-      .from('agendamentos')
-      .select(`
-        *,
-        cliente:cliente_id (nome, telefone),
-        profissional:profissional_id (nome),
-        servico:servico_id (nome, duracao)
-      `)
-      .order('data_agendamento', { ascending: false })
+    setLoading(true)
+    
+    try {
+      // Query simplificada - busca todos os agendamentos
+      const { data, error } = await supabase
+        .from('agendamentos')
+        .select('*')
+        .order('data_agendamento', { ascending: false })
 
-    if (!error && data) {
-      setAgendamentos(data)
+      if (error) {
+        console.error('Erro ao buscar agendamentos:', error)
+        setLoading(false)
+        return
+      }
+
+      if (data) {
+        // Buscar dados dos profissionais para enriquecer a lista
+        const profissionaisIds = [...new Set(data.map(a => a.profissional_id).filter(Boolean))]
+        
+        const { data: profissionaisData } = await supabase
+          .from('professionals')
+          .select('id, nome, email, telefone')
+          .in('id', profissionaisIds)
+
+        // Criar mapa de profissionais
+        const profissionaisMap = (profissionaisData || []).reduce((acc: any, prof: any) => {
+          acc[prof.id] = prof
+          return acc
+        }, {})
+
+        // Enriquecer agendamentos com dados do profissional
+        const agendamentosCompletos = data.map((ag: any) => ({
+          ...ag,
+          profissional: profissionaisMap[ag.profissional_id] || null,
+          cliente: { nome: 'Cliente', telefone: '-' }, // Simplificado por enquanto
+          servico: { nome: 'Serviço', duracao: 60 }    // Simplificado por enquanto
+        }))
+
+        setAgendamentos(agendamentosCompletos)
+      }
+    } catch (err) {
+      console.error('Erro:', err)
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
   }
 
   async function atualizarStatus(id: string, novoStatus: string) {
@@ -69,9 +101,24 @@ export default function GerenciarAgendamentos() {
       .eq('id', id)
 
     if (!error) {
-      setAgendamentos(agendamentos.map(a => 
-        a.id === id ? { ...a, status: novoStatus as any } : a
-      ))
+      carregarAgendamentos() // Recarrega a lista
+    }
+  }
+
+  async function deletarAgendamento(id: string) {
+    const confirmar = window.confirm('Tem certeza que deseja excluir este agendamento?')
+    if (!confirmar) return
+
+    const { error } = await supabase
+      .from('agendamentos')
+      .delete()
+      .eq('id', id)
+
+    if (!error) {
+      alert('Agendamento excluído!')
+      carregarAgendamentos()
+    } else {
+      alert('Erro ao excluir')
     }
   }
 
@@ -211,7 +258,7 @@ export default function GerenciarAgendamentos() {
                       flexWrap: 'wrap'
                     }}>
                       <h3 style={{ fontSize: '1.125rem', fontWeight: '600', color: 'white' }}>
-                        {agend.servico?.nome || 'Serviço não especificado'}
+                        Serviço Agendado
                       </h3>
                       <span style={{
                         backgroundColor: config.bg,
@@ -229,26 +276,29 @@ export default function GerenciarAgendamentos() {
                     <div style={{ display: 'grid', gap: '6px', color: '#9ca3af', fontSize: '0.875rem' }}>
                       <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <User style={{ width: '14px', height: '14px' }} />
-                        <strong style={{ color: '#d1d5db' }}>Cliente:</strong> {agend.cliente?.nome || 'Não informado'}
-                        {agend.cliente?.telefone && (
-                          <span style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '8px' }}>
-                            <Phone style={{ width: '12px', height: '12px' }} />
-                            {agend.cliente.telefone}
-                          </span>
-                        )}
+                        <strong style={{ color: '#d1d5db' }}>Profissional:</strong> 
+                        {agend.profissional?.nome || 'Não atribuído'}
                       </span>
                       
                       <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <Scissors style={{ width: '14px', height: '14px' }} />
-                        <strong style={{ color: '#d1d5db' }}>Profissional:</strong> {agend.profissional?.nome || 'Não atribuído'}
+                        <Phone style={{ width: '14px', height: '14px' }} />
+                        <strong style={{ color: '#d1d5db' }}>Tel Profissional:</strong> 
+                        {agend.profissional?.telefone || '-'}
+                      </span>
+
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <MapPin style={{ width: '14px', height: '14px' }} />
+                        <strong style={{ color: '#d1d5db' }}>Endereço:</strong> 
+                        {agend.endereco}, {agend.bairro} - {agend.cidade}
                       </span>
 
                       <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <Calendar style={{ width: '14px', height: '14px' }} />
-                        <strong style={{ color: '#d1d5db' }}>Data:</strong> {formatarData(agend.data_agendamento)} às {agend.horario}
+                        <strong style={{ color: '#d1d5db' }}>Data:</strong> 
+                        {formatarData(agend.data_agendamento)} às {agend.hora_inicio}
                         <span style={{ marginLeft: '8px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                           <Clock style={{ width: '12px', height: '12px' }} />
-                          {agend.servico?.duracao || 60} min
+                          até {agend.hora_fim}
                         </span>
                       </span>
                     </div>
@@ -270,58 +320,81 @@ export default function GerenciarAgendamentos() {
                     R$ {agend.valor_total?.toFixed(2) || '0.00'}
                   </div>
 
-                  {agend.status === 'pendente' && (
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      <button
-                        onClick={() => atualizarStatus(agend.id, 'confirmado')}
-                        style={{
-                          backgroundColor: 'rgba(59, 130, 246, 0.2)',
-                          color: '#60a5fa',
-                          border: 'none',
-                          padding: '8px 16px',
-                          borderRadius: '8px',
-                          cursor: 'pointer',
-                          fontSize: '0.875rem',
-                          fontWeight: '500'
-                        }}
-                      >
-                        Confirmar
-                      </button>
-                      <button
-                        onClick={() => atualizarStatus(agend.id, 'cancelado')}
-                        style={{
-                          backgroundColor: 'rgba(239, 68, 68, 0.2)',
-                          color: '#ef4444',
-                          border: 'none',
-                          padding: '8px 16px',
-                          borderRadius: '8px',
-                          cursor: 'pointer',
-                          fontSize: '0.875rem',
-                          fontWeight: '500'
-                        }}
-                      >
-                        Cancelar
-                      </button>
-                    </div>
-                  )}
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    {agend.status === 'pendente' && (
+                      <>
+                        <button
+                          onClick={() => atualizarStatus(agend.id, 'confirmado')}
+                          style={{
+                            backgroundColor: 'rgba(59, 130, 246, 0.2)',
+                            color: '#60a5fa',
+                            border: 'none',
+                            padding: '8px 16px',
+                            borderRadius: '8px',
+                            cursor: 'pointer',
+                            fontSize: '0.875rem',
+                            fontWeight: '500'
+                          }}
+                        >
+                          Confirmar
+                        </button>
+                        <button
+                          onClick={() => atualizarStatus(agend.id, 'cancelado')}
+                          style={{
+                            backgroundColor: 'rgba(239, 68, 68, 0.2)',
+                            color: '#ef4444',
+                            border: 'none',
+                            padding: '8px 16px',
+                            borderRadius: '8px',
+                            cursor: 'pointer',
+                            fontSize: '0.875rem',
+                            fontWeight: '500'
+                          }}
+                        >
+                          Cancelar
+                        </button>
+                      </>
+                    )}
 
-                  {agend.status === 'confirmado' && (
+                    {agend.status === 'confirmado' && (
+                      <button
+                        onClick={() => atualizarStatus(agend.id, 'concluido')}
+                        style={{
+                          backgroundColor: 'rgba(16, 185, 129, 0.2)',
+                          color: '#10b981',
+                          border: 'none',
+                          padding: '8px 16px',
+                          borderRadius: '8px',
+                          cursor: 'pointer',
+                          fontSize: '0.875rem',
+                          fontWeight: '500'
+                        }}
+                      >
+                        Marcar Concluído
+                      </button>
+                    )}
+
+                    {/* Botão de excluir */}
                     <button
-                      onClick={() => atualizarStatus(agend.id, 'concluido')}
+                      onClick={() => deletarAgendamento(agend.id)}
                       style={{
-                        backgroundColor: 'rgba(16, 185, 129, 0.2)',
-                        color: '#10b981',
+                        backgroundColor: 'rgba(107, 114, 128, 0.2)',
+                        color: '#9ca3af',
                         border: 'none',
                         padding: '8px 16px',
                         borderRadius: '8px',
                         cursor: 'pointer',
                         fontSize: '0.875rem',
-                        fontWeight: '500'
+                        fontWeight: '500',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px'
                       }}
                     >
-                      Marcar Concluído
+                      <Trash2 style={{ width: '16px', height: '16px' }} />
+                      Excluir
                     </button>
-                  )}
+                  </div>
                 </div>
               </div>
             )
