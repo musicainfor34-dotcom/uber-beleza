@@ -27,63 +27,81 @@ export default function AdminDashboard() {
     loadStats()
   }, [])
 
-  async function loadStats() {
-    try {
-      // 1. Contar PROFISSIONAIS (tabela professionals)
-      const { count: profissionaisCount, error: profError } = await supabase
-        .from('professionals')
-        .select('*', { count: 'exact', head: true })
+ async function loadStats() {
+  try {
+    // 1. Contar PROFISSIONAIS
+    const { count: profissionaisCount, error: profError } = await supabase
+      .from('professionals')
+      .select('*', { count: 'exact', head: true })
 
-      if (profError) {
-        console.error('Erro ao buscar profissionais:', profError)
-      }
-
-      // 2. Contar CLIENTES (usuários que NÃO são profissionais)
-      // Buscamos todos os IDs de profissionais primeiro
-      const { data: profissionaisIds } = await supabase
-        .from('professionals')
-        .select('id')
-
-      const profissionaisIdsList = profissionaisIds?.map(p => p.id) || []
-
-      // Agora contamos usuários que não estão nessa lista
-      let clientesCount = 0
-      if (profissionaisIdsList.length > 0) {
-        const { count } = await supabase
-          .from('profiles')
-          .select('*', { count: 'exact', head: true })
-          .not('id', 'in', `(${profissionaisIdsList.join(',')})`)
-        
-        clientesCount = count || 0
-      } else {
-        // Se não há profissionais, conta todos da profiles
-        const { count } = await supabase
-          .from('profiles')
-          .select('*', { count: 'exact', head: true })
-        
-        clientesCount = count || 0
-      }
-
-      // 3. Agendamentos de hoje (você pode implementar quando criar a tabela)
-      const hoje = new Date().toISOString().split('T')[0]
-      const { count: agendamentosCount } = await supabase
-        .from('agendamentos')
-        .select('*', { count: 'exact', head: true })
-        .eq('data', hoje)
-
-      setStats({
-        totalProfissionais: profissionaisCount || 0,
-        totalClientes: clientesCount,
-        agendamentosHoje: agendamentosCount || 0,
-        faturamentoMes: 0 // Implementar quando tiver tabela de pagamentos
-      })
-
-    } catch (error) {
-      console.error('Erro ao carregar estatísticas:', error)
-    } finally {
-      setLoading(false)
+    if (profError) {
+      console.error('Erro ao buscar profissionais:', profError)
     }
+
+    // 2. Contar CLIENTES
+    const { data: profissionaisIds } = await supabase
+      .from('professionals')
+      .select('user_id')
+
+    const profissionaisIdsList = profissionaisIds?.map(p => p.user_id) || []
+
+    let clientesCount = 0
+    if (profissionaisIdsList.length > 0) {
+      const { count } = await supabase
+        .from('profiles')
+        .select('*', { count: 'exact', head: true })
+        .not('id', 'in', `(${profissionaisIdsList.join(',')})`)
+      
+      clientesCount = count || 0
+    } else {
+      const { count } = await supabase
+        .from('profiles')
+        .select('*', { count: 'exact', head: true })
+      
+      clientesCount = count || 0
+    }
+
+    // 3. Agendamentos de HOJE (data_agendamento, não 'data')
+    const hoje = new Date().toISOString().split('T')[0]
+    const { count: agendamentosCount, error: agendError } = await supabase
+      .from('agendamentos')
+      .select('*', { count: 'exact', head: true })
+      .eq('data_agendamento', hoje)
+      .neq('status', 'cancelado') // Opcional: não conta cancelados
+
+    if (agendError) {
+      console.error('Erro ao buscar agendamentos:', agendError)
+    }
+
+    // 4. FATURAMENTO DO MÊS (soma dos valores de agendamentos confirmados/concluídos)
+    const primeiroDiaMes = new Date()
+    primeiroDiaMes.setDate(1)
+    const inicioMes = primeiroDiaMes.toISOString().split('T')[0]
+    
+    const { data: faturamentoData, error: fatError } = await supabase
+      .from('agendamentos')
+      .select('valor_total')
+      .gte('data_agendamento', inicioMes)
+      .in('status', ['confirmado', 'concluido']) // Só conta confirmados ou concluídos
+
+    let faturamentoMes = 0
+    if (faturamentoData) {
+      faturamentoMes = faturamentoData.reduce((sum, ag) => sum + (ag.valor_total || 0), 0)
+    }
+
+    setStats({
+      totalProfissionais: profissionaisCount || 0,
+      totalClientes: clientesCount,
+      agendamentosHoje: agendamentosCount || 0,
+      faturamentoMes: faturamentoMes
+    })
+
+  } catch (error) {
+    console.error('Erro ao carregar estatísticas:', error)
+  } finally {
+    setLoading(false)
   }
+}
 
   const cards = [
     {
