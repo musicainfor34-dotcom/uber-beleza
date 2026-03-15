@@ -26,63 +26,36 @@ export default function AdminDashboard() {
   useEffect(() => {
     loadStats()
   }, [])
-
- async function loadStats() {
+async function loadStats() {
   try {
     // 1. Contar PROFISSIONAIS
-    const { count: profissionaisCount, error: profError } = await supabase
+    const { count: profissionaisCount } = await supabase
       .from('professionals')
       .select('*', { count: 'exact', head: true })
 
-    if (profError) {
-      console.error('Erro ao buscar profissionais:', profError)
-    }
+    // 2. Contar CLIENTES (todos da profiles)
+    const { count: clientesCount } = await supabase
+      .from('profiles')
+      .select('*', { count: 'exact', head: true })
 
-    // 2. Contar CLIENTES
-    const { data: profissionaisIds } = await supabase
-      .from('professionals')
-      .select('user_id')
-
-    const profissionaisIdsList = profissionaisIds?.map(p => p.user_id) || []
-
-    let clientesCount = 0
-    if (profissionaisIdsList.length > 0) {
-      const { count } = await supabase
-        .from('profiles')
-        .select('*', { count: 'exact', head: true })
-        .not('id', 'in', `(${profissionaisIdsList.join(',')})`)
-      
-      clientesCount = count || 0
-    } else {
-      const { count } = await supabase
-        .from('profiles')
-        .select('*', { count: 'exact', head: true })
-      
-      clientesCount = count || 0
-    }
-
-    // 3. Agendamentos de HOJE (data_agendamento, não 'data')
+    // 3. Agendamentos de HOJE
     const hoje = new Date().toISOString().split('T')[0]
-    const { count: agendamentosCount, error: agendError } = await supabase
+    const { count: agendamentosCount } = await supabase
       .from('agendamentos')
       .select('*', { count: 'exact', head: true })
       .eq('data_agendamento', hoje)
-      .neq('status', 'cancelado') // Opcional: não conta cancelados
+      .neq('status', 'cancelado')
 
-    if (agendError) {
-      console.error('Erro ao buscar agendamentos:', agendError)
-    }
-
-    // 4. FATURAMENTO DO MÊS (soma dos valores de agendamentos confirmados/concluídos)
+    // 4. FATURAMENTO DO MÊS
     const primeiroDiaMes = new Date()
     primeiroDiaMes.setDate(1)
     const inicioMes = primeiroDiaMes.toISOString().split('T')[0]
     
-    const { data: faturamentoData, error: fatError } = await supabase
+    const { data: faturamentoData } = await supabase
       .from('agendamentos')
       .select('valor_total')
       .gte('data_agendamento', inicioMes)
-      .in('status', ['confirmado', 'concluido']) // Só conta confirmados ou concluídos
+      .in('status', ['confirmado', 'concluido'])
 
     let faturamentoMes = 0
     if (faturamentoData) {
@@ -91,7 +64,7 @@ export default function AdminDashboard() {
 
     setStats({
       totalProfissionais: profissionaisCount || 0,
-      totalClientes: clientesCount,
+      totalClientes: clientesCount || 0, // Agora vai aparecer!
       agendamentosHoje: agendamentosCount || 0,
       faturamentoMes: faturamentoMes
     })
