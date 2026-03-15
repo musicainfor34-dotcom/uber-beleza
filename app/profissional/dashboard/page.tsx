@@ -14,7 +14,8 @@ import {
   Clock,
   CheckCircle,
   XCircle,
-  AlertCircle
+  AlertCircle,
+  RefreshCw
 } from 'lucide-react'
 
 const supabase = createClient(
@@ -48,6 +49,7 @@ export default function DashboardProfissional() {
   const [profissional, setProfissional] = useState<any>(null)
   const [agendamentos, setAgendamentos] = useState<Agendamento[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string>('')
   const [stats, setStats] = useState({
     hoje: 0,
     total: 0,
@@ -71,28 +73,61 @@ export default function DashboardProfissional() {
   }, [profissional])
 
   async function checkUser() {
-    const { data: { session } } = await supabase.auth.getSession()
-    if (!session) {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        router.push('/login')
+        return
+      }
+      setUser(session.user)
+    } catch (err) {
+      console.error('Erro ao verificar usuário:', err)
       router.push('/login')
-      return
     }
-    setUser(session.user)
   }
 
   async function fetchProfissional() {
     try {
-      const { data, error } = await supabase
+      console.log('Buscando profissional com user_id:', user.id)
+      
+      // Tenta buscar pelo user_id primeiro
+      let { data, error } = await supabase
         .from('professionals')
         .select('*')
         .eq('user_id', user.id)
         .single()
 
-      if (error) throw error
-      if (data) {
-        setProfissional(data)
+      // Se não encontrar, tenta buscar pelo email como fallback
+      if (!data && !error) {
+        const { data: dataByEmail, error: errorByEmail } = await supabase
+          .from('professionals')
+          .select('*')
+          .eq('email', user.email)
+          .single()
+        
+        if (dataByEmail) {
+          data = dataByEmail
+          error = errorByEmail
+        }
       }
-    } catch (error) {
-      console.error('Erro ao buscar profissional:', error)
+
+      if (error) {
+        console.error('Erro na query:', error)
+        // Se for erro de "não encontrado", não trata como erro crítico
+        if (error.code === 'PGRST116') {
+          setProfissional(null)
+        } else {
+          setError('Erro ao buscar dados do profissional')
+        }
+      } else if (data) {
+        console.log('Profissional encontrado:', data)
+        setProfissional(data)
+      } else {
+        setProfissional(null)
+      }
+    } catch (err) {
+      console.error('Erro ao buscar profissional:', err)
+      setError('Erro ao carregar dados')
     } finally {
       setLoading(false)
     }
@@ -102,7 +137,6 @@ export default function DashboardProfissional() {
     try {
       const today = new Date().toISOString().split('T')[0]
       
-      // Buscar agendamentos do profissional com dados do cliente e serviço
       const { data, error } = await supabase
         .from('agendamentos')
         .select(`
@@ -119,7 +153,6 @@ export default function DashboardProfissional() {
       const agendamentosData = data || []
       setAgendamentos(agendamentosData)
 
-      // Calcular estatísticas
       const hoje = agendamentosData.filter((a: Agendamento) => 
         a.data_agendamento === today && a.status !== 'cancelado'
       ).length
@@ -148,7 +181,6 @@ export default function DashboardProfissional() {
 
       if (error) throw error
       
-      // Recarregar agendamentos
       fetchAgendamentos()
     } catch (error) {
       console.error('Erro ao atualizar status:', error)
@@ -184,19 +216,6 @@ export default function DashboardProfissional() {
     }
   }
 
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'confirmado':
-        return <CheckCircle className="w-4 h-4" />
-      case 'cancelado':
-        return <XCircle className="w-4 h-4" />
-      case 'pendente':
-        return <AlertCircle className="w-4 h-4" />
-      default:
-        return null
-    }
-  }
-
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -205,17 +224,64 @@ export default function DashboardProfissional() {
     )
   }
 
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+        <div className="text-center bg-white p-8 rounded-2xl shadow-lg max-w-md">
+          <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
+          <p className="text-lg text-gray-700 mb-2">{error}</p>
+          <button 
+            onClick={fetchProfissional}
+            className="px-4 py-2 bg-purple-600 text-white rounded-lg font-semibold hover:bg-purple-700"
+          >
+            Tentar Novamente
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // Se não encontrou o profissional, mostra opção de completar cadastro
   if (!profissional) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-lg text-gray-600">Complete seu cadastro primeiro</p>
-          <button 
-            onClick={() => router.push('/profissional/completar-cadastro')}
-            className="mt-4 px-4 py-2 bg-purple-600 text-white rounded-lg"
-          >
-            Completar Cadastro
-          </button>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+        <div className="text-center bg-white p-8 rounded-2xl shadow-lg max-w-md w-full">
+          <div className="w-20 h-20 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Scissors className="w-10 h-10 text-purple-600" />
+          </div>
+          <h2 className="text-xl font-bold text-gray-800 mb-2">Complete seu cadastro</h2>
+          <p className="text-gray-500 mb-6">
+            Para acessar o painel do profissional, você precisa completar seu cadastro primeiro.
+          </p>
+          
+          <div className="space-y-3">
+            <button 
+              onClick={() => router.push('/cadastro-profissional')}
+              className="w-full px-4 py-3 bg-gradient-to-r from-purple-600 to-pink-500 text-white rounded-xl font-semibold hover:opacity-90 transition-opacity"
+            >
+              Completar Cadastro
+            </button>
+            
+            <button 
+              onClick={handleLogout}
+              className="w-full px-4 py-3 border border-gray-300 text-gray-700 rounded-xl font-semibold hover:bg-gray-50 transition-colors"
+            >
+              Sair e entrar com outra conta
+            </button>
+          </div>
+
+          <div className="mt-6 p-4 bg-gray-50 rounded-lg text-left text-sm text-gray-600">
+            <p className="font-semibold mb-1">Debug:</p>
+            <p>User ID: {user?.id}</p>
+            <p>Email: {user?.email}</p>
+            <button 
+              onClick={fetchProfissional}
+              className="mt-2 text-purple-600 hover:underline flex items-center gap-1"
+            >
+              <RefreshCw className="w-3 h-3" />
+              Tentar buscar novamente
+            </button>
+          </div>
         </div>
       </div>
     )
@@ -318,8 +384,7 @@ export default function DashboardProfissional() {
                           <h3 className="font-bold text-gray-800">
                             {agendamento.servico?.nome || 'Serviço'}
                           </h3>
-                          <span className={`px-2 py-1 rounded-full text-xs font-medium border flex items-center gap-1 ${getStatusColor(agendamento.status)}`}>
-                            {getStatusIcon(agendamento.status)}
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium border ${getStatusColor(agendamento.status)}`}>
                             {agendamento.status.charAt(0).toUpperCase() + agendamento.status.slice(1)}
                           </span>
                         </div>

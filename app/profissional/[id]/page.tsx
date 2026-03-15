@@ -183,6 +183,12 @@ export default function PerfilProfissional() {
     }
   }
 
+  // CORREÇÃO: Botão voltar vai para o dashboard do cliente ou login
+  const handleVoltar = () => {
+    // Se for profissional logado, vai pro dashboard dele, senão vai pro login
+    router.push('/cliente/dashboard')
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -193,12 +199,27 @@ export default function PerfilProfissional() {
 
   if (!profissional) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-lg text-gray-600 mb-4">Profissional não encontrado</p>
-          <button onClick={() => router.push('/')} className="px-4 py-2 bg-pink-500 text-white rounded-lg font-semibold">
-            Voltar
-          </button>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+        <div className="text-center bg-white p-8 rounded-2xl shadow-lg max-w-md">
+          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <span className="text-2xl">😕</span>
+          </div>
+          <p className="text-lg text-gray-700 mb-2 font-semibold">Profissional não encontrado</p>
+          <p className="text-sm text-gray-500 mb-6">O profissional pode ter sido removido ou o link está incorreto.</p>
+          <div className="flex gap-3">
+            <button 
+              onClick={() => router.push('/login')} 
+              className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg font-semibold hover:bg-gray-300"
+            >
+              Ir para Login
+            </button>
+            <button 
+              onClick={handleVoltar} 
+              className="flex-1 px-4 py-2 bg-gradient-to-r from-pink-500 to-purple-600 text-white rounded-lg font-semibold hover:opacity-90"
+            >
+              Voltar
+            </button>
+          </div>
         </div>
       </div>
     )
