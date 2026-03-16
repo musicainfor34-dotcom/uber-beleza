@@ -16,9 +16,11 @@ import {
   CheckCircle,
   XCircle,
   RefreshCw,
-  Bell,   // ← ADICIONAR VÍRGULA AQUI
-  Trash2
+  Bell,
+  Trash2,
+  MessageCircle  // ← ÍCONE DO CHAT
 } from 'lucide-react'
+import ChatModal from './ChatModal'  // ← IMPORTAR O MODAL
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -55,6 +57,10 @@ export default function DashboardProfissional() {
   const [agendamentos, setAgendamentos] = useState<Agendamento[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  
+  // ← ESTADOS DO CHAT
+  const [isChatOpen, setIsChatOpen] = useState(false)
+  const [unreadCount, setUnreadCount] = useState(0)
 
   useEffect(() => {
     checkUser()
@@ -69,6 +75,7 @@ export default function DashboardProfissional() {
   useEffect(() => {
     if (profissional) {
       fetchAgendamentos()
+      fetchUnreadCount() // ← BUSCAR MENSAGENS NÃO LIDAS
       
       // Realtime - atualiza quando cliente agenda
       const channel = supabase
@@ -89,12 +96,42 @@ export default function DashboardProfissional() {
           }
         )
         .subscribe()
+      
+      // ← REALTIME PARA NOVAS MENSAGENS
+      const chatChannel = supabase
+        .channel(`chat:${profissional.id}`)
+        .on('postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'conversations',
+            filter: `professional_id=eq.${profissional.id}`
+          },
+          () => fetchUnreadCount()
+        )
+        .subscribe()
 
       return () => {
         supabase.removeChannel(channel)
+        supabase.removeChannel(chatChannel)
       }
     }
   }, [profissional])
+
+  // ← FUNÇÃO PARA CONTAR MENSAGENS NÃO LIDAS
+  async function fetchUnreadCount() {
+    if (!profissional?.id) return
+    
+    const { count, error } = await supabase
+      .from('conversations')
+      .select('*', { count: 'exact', head: true })
+      .eq('professional_id', profissional.id)
+      .eq('unread_professional', true)
+    
+    if (!error && count !== null) {
+      setUnreadCount(count)
+    }
+  }
 
   async function checkUser() {
     const { data: { session } } = await supabase.auth.getSession()
@@ -264,6 +301,21 @@ async function deletarAgendamento(agendamentoId: string) {
           </div>
           <div className="flex items-center gap-4">
             <span className="hidden md:inline">Olá, {profissional?.nome || 'Profissional'}</span>
+            
+            {/* ← BOTÃO DE MENSAGENS NOVO */}
+            <button
+              onClick={() => setIsChatOpen(true)}
+              className="relative p-2 bg-white/20 hover:bg-white/30 rounded-full transition-colors"
+              title="Mensagens"
+            >
+              <MessageCircle className="w-6 h-6" />
+              {unreadCount > 0 && (
+                <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center animate-pulse">
+                  {unreadCount}
+                </span>
+              )}
+            </button>
+
             <button 
               onClick={handleLogout}
               className="flex items-center gap-2 px-4 py-2 bg-white/20 hover:bg-white/30 rounded-lg transition-colors"
@@ -504,6 +556,16 @@ async function deletarAgendamento(agendamentoId: string) {
           </div>
         </div>
       </main>
+
+      {/* ← MODAL DE CHAT */}
+      <ChatModal 
+        isOpen={isChatOpen}
+        onClose={() => {
+          setIsChatOpen(false)
+          fetchUnreadCount() // Atualiza contador ao fechar
+        }}
+        professionalId={profissional?.id}
+      />
     </div>
   )
 }
