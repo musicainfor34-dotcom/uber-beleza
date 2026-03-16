@@ -45,6 +45,7 @@ export default function ChatModal({
   const [messages, setMessages] = useState<Message[]>([])
   const [newMessage, setNewMessage] = useState('')
   const [loading, setLoading] = useState(true)
+  const [sending, setSending] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -180,18 +181,22 @@ export default function ChatModal({
 
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!newMessage.trim() || !selectedConversation) return
+    if (!newMessage.trim() || !selectedConversation || sending) return
 
-    const { error } = await supabase
-      .from('messages')
-      .insert({
-        conversation_id: selectedConversation.id,
-        sender_id: professionalId,
-        sender_type: 'professional',
-        content: newMessage.trim()
-      })
+    setSending(true)
+    
+    try {
+      const { error } = await supabase
+        .from('messages')
+        .insert({
+          conversation_id: selectedConversation.id,
+          sender_id: professionalId,
+          sender_type: 'professional',
+          content: newMessage.trim()
+        })
 
-    if (!error) {
+      if (error) throw error
+
       await supabase
         .from('conversations')
         .update({ 
@@ -202,6 +207,11 @@ export default function ChatModal({
         .eq('id', selectedConversation.id)
       
       setNewMessage('')
+    } catch (err) {
+      console.error('Erro ao enviar mensagem:', err)
+      alert('Erro ao enviar mensagem. Tente novamente.')
+    } finally {
+      setSending(false)
     }
   }
 
@@ -358,6 +368,7 @@ export default function ChatModal({
                 <div ref={messagesEndRef} />
               </div>
 
+              {/* INPUT CORRIGIDO - Texto agora é visível! */}
               <form onSubmit={sendMessage} className="p-4 border-t border-gray-200 bg-white">
                 <div className="flex gap-2">
                   <input
@@ -365,14 +376,19 @@ export default function ChatModal({
                     value={newMessage}
                     onChange={(e) => setNewMessage(e.target.value)}
                     placeholder="Digite sua mensagem..."
-                    className="flex-1 border border-gray-300 rounded-full px-4 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    className="flex-1 bg-white border border-gray-300 rounded-full px-4 py-2 text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    style={{ color: '#1f2937' }} /* Força cor escura */
                   />
                   <button
                     type="submit"
-                    disabled={!newMessage.trim()}
+                    disabled={!newMessage.trim() || sending}
                     className="bg-purple-600 text-white px-4 py-2 rounded-full hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition-colors"
                   >
-                    <Send className="w-4 h-4" />
+                    {sending ? (
+                      <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
+                    ) : (
+                      <Send className="w-4 h-4" />
+                    )}
                   </button>
                 </div>
               </form>
