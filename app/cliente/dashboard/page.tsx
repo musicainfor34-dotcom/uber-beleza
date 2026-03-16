@@ -14,8 +14,10 @@ import {
   ArrowRight,
   ChevronRight,
   Clock,
-  Loader2
+  Loader2,
+  MessageCircle
 } from 'lucide-react'
+import ChatModal from './ChatModal'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -29,10 +31,52 @@ export default function ClienteDashboard() {
   const [servicoSelecionado, setServicoSelecionado] = useState<string | null>(null)
   const [profissionais, setProfissionais] = useState<any[]>([])
   const [loadingProfissionais, setLoadingProfissionais] = useState(false)
+  
+  // Estados do chat
+  const [isChatOpen, setIsChatOpen] = useState(false)
+  const [unreadCount, setUnreadCount] = useState(0)
 
   useEffect(() => {
     checkUser()
   }, [])
+
+  useEffect(() => {
+    if (user?.id) {
+      fetchUnreadCount()
+      
+      // Realtime para atualizações
+      const subscription = supabase
+        .channel(`chat-client:${user.id}`)
+        .on('postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'conversations',
+            filter: `client_id=eq.${user.id}`
+          },
+          () => fetchUnreadCount()
+        )
+        .subscribe()
+
+      return () => {
+        supabase.removeChannel(subscription)
+      }
+    }
+  }, [user])
+
+  async function fetchUnreadCount() {
+    if (!user?.id) return
+    
+    const { count, error } = await supabase
+      .from('conversations')
+      .select('*', { count: 'exact', head: true })
+      .eq('client_id', user.id)
+      .eq('unread_client', true)
+    
+    if (!error && count !== null) {
+      setUnreadCount(count)
+    }
+  }
 
   useEffect(() => {
     if (servicoSelecionado) {
@@ -53,7 +97,6 @@ export default function ClienteDashboard() {
   async function buscarProfissionais(especialidade: string) {
     setLoadingProfissionais(true)
     try {
-      // Buscar profissionais do Supabase filtrando por especialidade
       const { data, error } = await supabase
         .from('professionals')
         .select('*')
@@ -62,7 +105,6 @@ export default function ClienteDashboard() {
 
       if (error) throw error
 
-      // Filtrar por especialidade (como é um array, filtramos no JS)
       const filtrados = (data || []).filter((prof: any) => {
         const especs = prof.especialidade || []
         return especs.some((esp: string) => 
@@ -146,6 +188,18 @@ export default function ClienteDashboard() {
             <p className="text-slate-400 text-sm">Escolha uma categoria</p>
           </div>
           <div className="flex items-center gap-3">
+            {/* Botão de Mensagens Mobile */}
+            <button 
+              onClick={() => setIsChatOpen(true)}
+              className="relative p-2 text-slate-400 hover:text-white"
+            >
+              <MessageCircle className="w-6 h-6" />
+              {unreadCount > 0 && (
+                <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center">
+                  {unreadCount}
+                </span>
+              )}
+            </button>
             <button onClick={handleLogout} className="p-2 text-slate-400 hover:text-white">
               <LogOut className="w-5 h-5" />
             </button>
@@ -263,6 +317,18 @@ export default function ClienteDashboard() {
                 <p className="text-sm text-gray-500">Escolha o serviço desejado</p>
               </div>
               <div className="flex items-center gap-2">
+                {/* Botão de Mensagens Desktop */}
+                <button 
+                  onClick={() => setIsChatOpen(true)}
+                  className="relative p-2 text-gray-400 hover:text-purple-600 transition-colors"
+                >
+                  <MessageCircle className="w-6 h-6" />
+                  {unreadCount > 0 && (
+                    <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center animate-pulse">
+                      {unreadCount}
+                    </span>
+                  )}
+                </button>
                 <button onClick={handleLogout} className="p-2 text-gray-400 hover:text-red-500">
                   <LogOut className="w-5 h-5" />
                 </button>
@@ -341,50 +407,43 @@ export default function ClienteDashboard() {
                   ) : profissionais.length === 0 ? (
                     <div className="text-center py-12 text-gray-500 bg-white rounded-2xl border border-gray-200">
                       <p className="text-lg">Nenhum profissional disponível para esta categoria.</p>
-                      <p className="text-sm mt-2">Tente outra categoria ou volte mais tarde.</p>
+                      <p className="text-sm mt-2">Tente novamente mais tarde ou escolha outro serviço.</p>
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                       {profissionais.map((prof) => (
                         <div 
                           key={prof.id}
-                          className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 hover:shadow-md transition-all cursor-pointer group"
                           onClick={() => router.push(`/profissional/${prof.id}`)}
+                          className="bg-white rounded-2xl p-6 border border-gray-200 hover:border-pink-300 hover:shadow-lg transition-all cursor-pointer"
                         >
                           <div className="flex items-start gap-4">
                             <div className="relative">
-                              <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-pink-400 to-purple-600 flex items-center justify-center text-white text-2xl font-bold">
+                              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-pink-400 to-purple-600 flex items-center justify-center text-white font-bold text-2xl">
                                 {prof.nome?.charAt(0).toUpperCase() || 'P'}
                               </div>
                               {prof.ativo && (
-                                <div className="absolute -bottom-2 -right-2 w-4 h-4 bg-green-500 border-2 border-white rounded-full"></div>
+                                <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 border-2 border-white rounded-full"></div>
                               )}
                             </div>
-                            
                             <div className="flex-1">
-                              <div className="flex items-start justify-between">
-                                <div>
-                                  <h3 className="font-bold text-xl text-gray-800 group-hover:text-pink-600 transition-colors">{prof.nome}</h3>
-                                  <div className="flex items-center gap-2 mt-1">
-                                    <Star className="w-4 h-4 text-yellow-400 fill-current" />
-                                    <span className="font-medium text-gray-700">{prof.avaliacao || 5.0}</span>
-                                  </div>
-                                </div>
-                                <span className="text-2xl font-bold text-gray-800">
-                                  R$ {prof.preco_hora || 0}
-                                </span>
+                              <h3 className="font-bold text-xl text-gray-800">{prof.nome}</h3>
+                              <div className="flex items-center gap-1 mt-1">
+                                <Star className="w-4 h-4 text-yellow-400 fill-current" />
+                                <span className="text-sm font-medium text-gray-700">{prof.avaliacao || 5.0}</span>
+                                <span className="text-sm text-gray-400">• {prof.cidade || 'Sem cidade'}</span>
                               </div>
-                              
-                              <div className="flex items-center gap-4 mt-3 text-sm text-gray-500">
-                                <span className="flex items-center gap-1">
-                                  <MapPin className="w-4 h-4 text-green-500" />
-                                  {prof.cidade || 'Cidade não informada'}
+                              <p className="text-sm text-gray-500 mt-2 line-clamp-2">{prof.bio || 'Profissional especializado'}</p>
+                              <div className="flex items-center justify-between mt-4">
+                                <span className="text-2xl font-bold text-pink-600">
+                                  R$ {prof.preco_hora || '0'}
+                                  <span className="text-sm font-normal text-gray-400">/hora</span>
                                 </span>
+                                <button className="px-4 py-2 bg-pink-500 hover:bg-pink-600 text-white font-bold rounded-xl transition-colors flex items-center gap-2">
+                                  Agendar
+                                  <ArrowRight className="w-4 h-4" />
+                                </button>
                               </div>
-
-                              <button className="mt-4 w-full py-3 bg-gradient-to-r from-pink-500 to-purple-600 text-white font-semibold rounded-xl hover:opacity-90 transition-opacity">
-                                Agendar Horário
-                              </button>
                             </div>
                           </div>
                         </div>
@@ -397,6 +456,14 @@ export default function ClienteDashboard() {
           )}
         </main>
       </div>
+
+      {/* Modal de Chat */}
+      <ChatModal 
+        isOpen={isChatOpen}
+        onClose={() => setIsChatOpen(false)}
+        userId={user?.id}
+        userType="client"
+      />
     </div>
   )
 }

@@ -4,7 +4,6 @@ import { useEffect, useState, useRef } from 'react'
 import { createClient } from '@supabase/supabase-js'
 import { X, Send, MessageCircle, User } from 'lucide-react'
 
-// Criar instância própria para este componente garantir autenticação
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -21,175 +20,50 @@ interface Message {
 
 interface Conversation {
   id: string
-  client_id: string
-  client_name?: string
-  client_email?: string
+  professional_id: string
+  professional_name?: string
+  professional_email?: string
   last_message?: string
-  unread_professional: boolean
+  unread_client: boolean
   updated_at: string
 }
 
 interface ChatModalProps {
   isOpen: boolean
   onClose: () => void
-  professionalId: string
-  initialClientId?: string | null
-  initialClientName?: string
-  initialClientEmail?: string
+  clientId: string
 }
 
-export default function ChatModal({ 
-  isOpen, 
-  onClose, 
-  professionalId, 
-  initialClientId,
-  initialClientName,
-  initialClientEmail 
-}: ChatModalProps) {
+export default function ChatModalClient({ isOpen, onClose, clientId }: ChatModalProps) {
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [newMessage, setNewMessage] = useState('')
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
-  const [error, setError] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
-  // Verificar se usuário está autenticado
   useEffect(() => {
-    if (!isOpen) return
+    if (!isOpen || !clientId) return
     
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!session) {
-        console.error('Usuário não autenticado no modal')
-        setError('Você precisa estar logado')
-      }
-    })
-  }, [isOpen])
-
-  useEffect(() => {
-    if (!isOpen || !professionalId) return
-    
-    console.log('🟢 Chat aberto. Professional ID:', professionalId)
     fetchConversations()
     
     const subscription = supabase
-      .channel('conversations')
+      .channel('conversations-client')
       .on('postgres_changes', 
-        { event: '*', schema: 'public', table: 'conversations', filter: `professional_id=eq.${professionalId}` },
-        (payload) => {
-          console.log('📝 Conversa atualizada:', payload)
-          fetchConversations()
-        }
+        { event: '*', schema: 'public', table: 'conversations', filter: `client_id=eq.${clientId}` },
+        () => fetchConversations()
       )
-      .subscribe((status) => {
-        console.log('📡 Status da subscription:', status)
-      })
+      .subscribe()
 
     return () => {
       supabase.removeChannel(subscription)
     }
-  }, [isOpen, professionalId])
-
-  useEffect(() => {
-    if (!isOpen || !initialClientId || !professionalId) return
-    
-    console.log('🎯 Cliente inicial:', initialClientId, initialClientName)
-    
-    const setupInitialChat = async () => {
-      const existingConv = conversations.find(c => c.client_id === initialClientId)
-      
-      if (existingConv) {
-        console.log('✅ Conversa existente encontrada:', existingConv.id)
-        setSelectedConversation(existingConv)
-      } else {
-        console.log('🆕 Criando nova conversa...')
-        await criarNovaConversa(initialClientId, initialClientName, initialClientEmail)
-      }
-    }
-    
-    if (conversations.length > 0 || !loading) {
-      setupInitialChat()
-    }
-  }, [initialClientId, conversations, loading, professionalId])
-
-  const fetchConversations = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('conversations')
-        .select(`
-          *,
-          client:client_id (
-            email,
-            raw_user_meta_data->>full_name as full_name
-          )
-        `)
-        .eq('professional_id', professionalId)
-        .order('updated_at', { ascending: false })
-
-      if (error) {
-        console.error('❌ Erro ao buscar conversas:', error)
-        setError('Erro ao carregar conversas')
-        return
-      }
-
-      if (data) {
-        console.log('📋 Conversas carregadas:', data.length)
-        const formatted = data.map((conv: any) => ({
-          ...conv,
-          client_name: conv.client?.full_name || conv.client?.email?.split('@')[0] || 'Cliente',
-          client_email: conv.client?.email
-        }))
-        setConversations(formatted)
-      }
-    } catch (err) {
-      console.error('❌ Erro:', err)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const criarNovaConversa = async (clientId: string, clientName?: string, clientEmail?: string) => {
-    try {
-      console.log('📝 Criando conversa:', { professional_id: professionalId, client_id: clientId })
-      
-      const { data, error } = await supabase
-        .from('conversations')
-        .insert({
-          professional_id: professionalId,
-          client_id: clientId,
-          unread_professional: false,
-          unread_client: false
-        })
-        .select()
-        .single()
-
-      if (error) {
-        console.error('❌ Erro ao criar conversa:', error)
-        alert('Erro ao iniciar conversa: ' + error.message)
-        return
-      }
-
-      if (data) {
-        console.log('✅ Conversa criada:', data.id)
-        const newConv = {
-          ...data,
-          client_name: clientName || clientEmail?.split('@')[0] || 'Cliente',
-          client_email: clientEmail || ''
-        }
-        setConversations(prev => [newConv, ...prev])
-        setSelectedConversation(newConv)
-      }
-    } catch (err) {
-      console.error('❌ Erro ao criar conversa:', err)
-      alert('Erro ao criar conversa')
-    }
-  }
+  }, [isOpen, clientId])
 
   useEffect(() => {
     if (!selectedConversation) return
     
-    console.log('💬 Conversa selecionada:', selectedConversation.id)
     fetchMessages(selectedConversation.id)
     markAsRead(selectedConversation.id)
     
@@ -198,7 +72,6 @@ export default function ChatModal({
       .on('postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'messages', filter: `conversation_id=eq.${selectedConversation.id}` },
         (payload) => {
-          console.log('📨 Nova mensagem:', payload)
           setMessages(prev => [...prev, payload.new as Message])
           scrollToBottom()
         }
@@ -210,6 +83,40 @@ export default function ChatModal({
     }
   }, [selectedConversation])
 
+  const fetchConversations = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('conversations')
+        .select(`
+          *,
+          professional:professional_id (
+            nome,
+            email
+          )
+        `)
+        .eq('client_id', clientId)
+        .order('updated_at', { ascending: false })
+
+      if (error) {
+        console.error('Erro ao buscar conversas:', error)
+        return
+      }
+
+      if (data) {
+        const formatted = data.map((conv: any) => ({
+          ...conv,
+          professional_name: conv.professional?.nome || conv.professional?.email?.split('@')[0] || 'Profissional',
+          professional_email: conv.professional?.email
+        }))
+        setConversations(formatted)
+      }
+    } catch (err) {
+      console.error('Erro:', err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const fetchMessages = async (conversationId: string) => {
     try {
       const { data, error } = await supabase
@@ -219,84 +126,67 @@ export default function ChatModal({
         .order('created_at', { ascending: true })
 
       if (error) {
-        console.error('❌ Erro ao buscar mensagens:', error)
+        console.error('Erro ao buscar mensagens:', error)
         return
       }
 
       if (data) {
-        console.log('📨 Mensagens carregadas:', data.length)
         setMessages(data)
         scrollToBottom()
       }
     } catch (err) {
-      console.error('❌ Erro:', err)
+      console.error('Erro:', err)
     }
   }
 
   const markAsRead = async (conversationId: string) => {
     await supabase
       .from('conversations')
-      .update({ unread_professional: false })
+      .update({ unread_client: false })
       .eq('id', conversationId)
   }
 
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!newMessage.trim() || !selectedConversation || sending) {
-      console.log('⚠️ Bloqueado:', { text: newMessage.trim(), conv: !!selectedConversation, sending })
-      return
-    }
+    if (!newMessage.trim() || !selectedConversation || sending) return
 
     setSending(true)
-    setError(null)
     
     try {
-      const messageData = {
-        conversation_id: selectedConversation.id,
-        sender_id: professionalId,
-        sender_type: 'professional',
-        content: newMessage.trim()
-      }
-      
-      console.log('📤 Enviando mensagem:', messageData)
-
       const { data, error } = await supabase
         .from('messages')
-        .insert(messageData)
+        .insert({
+          conversation_id: selectedConversation.id,
+          sender_id: clientId,
+          sender_type: 'client',
+          content: newMessage.trim()
+        })
         .select()
         .single()
 
       if (error) {
-        console.error('❌ Erro ao enviar:', error)
-        setError('Erro ao enviar: ' + error.message)
+        console.error('Erro ao enviar:', error)
         alert('Erro ao enviar mensagem: ' + error.message)
         return
       }
 
-      console.log('✅ Mensagem enviada:', data)
-
       // Atualizar last_message na conversa
-      const { error: updateError } = await supabase
+      await supabase
         .from('conversations')
         .update({ 
           last_message: newMessage.trim(),
           updated_at: new Date().toISOString(),
-          unread_client: true 
+          unread_professional: true 
         })
         .eq('id', selectedConversation.id)
-
-      if (updateError) {
-        console.error('❌ Erro ao atualizar conversa:', updateError)
-      }
       
       setNewMessage('')
       
-      // Adicionar mensagem localmente imediatamente (otimista)
+      // Adicionar mensagem localmente
       setMessages(prev => [...prev, data])
       
     } catch (err: any) {
-      console.error('❌ Erro no envio:', err)
-      setError('Erro inesperado: ' + err.message)
+      console.error('Erro no envio:', err)
       alert('Erro ao enviar mensagem')
     } finally {
       setSending(false)
@@ -329,11 +219,12 @@ export default function ChatModal({
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl h-[600px] flex overflow-hidden">
         
+        {/* Lista de Conversas */}
         <div className="w-1/3 border-r border-gray-200 flex flex-col bg-gray-50">
           <div className="p-4 border-b border-gray-200 bg-white">
             <h3 className="font-bold text-lg flex items-center gap-2 text-gray-800">
               <MessageCircle className="w-5 h-5 text-purple-600" />
-              Mensagens
+              Minhas Conversas
             </h3>
           </div>
           
@@ -347,7 +238,7 @@ export default function ChatModal({
               <div className="p-8 text-center text-gray-400">
                 <MessageCircle className="w-12 h-12 mx-auto mb-2 opacity-30" />
                 <p className="text-sm">Nenhuma conversa ainda</p>
-                <p className="text-xs mt-1">Clique em "Conversar" em um agendamento para iniciar</p>
+                <p className="text-xs mt-1">Quando um profissional entrar em contato, aparecerá aqui</p>
               </div>
             ) : (
               conversations.map((conv) => (
@@ -356,28 +247,28 @@ export default function ChatModal({
                   onClick={() => setSelectedConversation(conv)}
                   className={`w-full p-4 text-left border-b border-gray-100 hover:bg-white transition-all ${
                     selectedConversation?.id === conv.id ? 'bg-white border-l-4 border-l-purple-500 shadow-sm' : ''
-                  } ${conv.unread_professional ? 'bg-yellow-50' : ''}`}
+                  } ${conv.unread_client ? 'bg-yellow-50' : ''}`}
                 >
                   <div className="flex items-start gap-3">
                     <div className="w-10 h-10 bg-gradient-to-br from-purple-400 to-pink-500 rounded-full flex items-center justify-center text-white font-bold text-sm">
-                      {conv.client_name?.[0]?.toUpperCase() || 'C'}
+                      {conv.professional_name?.[0]?.toUpperCase() || 'P'}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex justify-between items-start mb-1">
                         <span className="font-semibold text-sm text-gray-800 truncate">
-                          {conv.client_name}
+                          {conv.professional_name}
                         </span>
                         <span className="text-xs text-gray-400">
                           {formatDate(conv.updated_at)}
                         </span>
                       </div>
-                      <p className="text-xs text-gray-500 truncate mb-1">{conv.client_email}</p>
+                      <p className="text-xs text-gray-500 truncate mb-1">{conv.professional_email}</p>
                       {conv.last_message && (
-                        <p className={`text-sm truncate ${conv.unread_professional ? 'font-semibold text-gray-800' : 'text-gray-500'}`}>
+                        <p className={`text-sm truncate ${conv.unread_client ? 'font-semibold text-gray-800' : 'text-gray-500'}`}>
                           {conv.last_message}
                         </p>
                       )}
-                      {conv.unread_professional && (
+                      {conv.unread_client && (
                         <span className="inline-block mt-1 w-2 h-2 bg-red-500 rounded-full"></span>
                       )}
                     </div>
@@ -388,17 +279,18 @@ export default function ChatModal({
           </div>
         </div>
 
+        {/* Área de Mensagens */}
         <div className="w-2/3 flex flex-col bg-white">
           {selectedConversation ? (
             <>
               <div className="p-4 border-b border-gray-200 flex justify-between items-center bg-white">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 bg-gradient-to-br from-purple-400 to-pink-500 rounded-full flex items-center justify-center text-white font-bold">
-                    {selectedConversation.client_name?.[0]?.toUpperCase() || 'C'}
+                    {selectedConversation.professional_name?.[0]?.toUpperCase() || 'P'}
                   </div>
                   <div>
-                    <h4 className="font-semibold text-gray-800">{selectedConversation.client_name}</h4>
-                    <p className="text-xs text-gray-500">{selectedConversation.client_email}</p>
+                    <h4 className="font-semibold text-gray-800">{selectedConversation.professional_name}</h4>
+                    <p className="text-xs text-gray-500">{selectedConversation.professional_email}</p>
                   </div>
                 </div>
                 <button 
@@ -409,22 +301,16 @@ export default function ChatModal({
                 </button>
               </div>
 
-              {error && (
-                <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-2 text-sm">
-                  {error}
-                </div>
-              )}
-
               <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50">
                 {messages.length === 0 ? (
                   <div className="text-center text-gray-400 mt-8">
                     <User className="w-12 h-12 mx-auto mb-2 opacity-30" />
                     <p className="text-sm">Nenhuma mensagem ainda</p>
-                    <p className="text-xs">Envie uma mensagem para iniciar a conversa!</p>
+                    <p className="text-xs">Envie uma mensagem para o profissional!</p>
                   </div>
                 ) : (
                   messages.map((msg, index) => {
-                    const isProfessional = msg.sender_type === 'professional'
+                    const isClient = msg.sender_type === 'client'
                     const showDate = index === 0 || 
                       new Date(messages[index-1].created_at).toDateString() !== new Date(msg.created_at).toDateString()
                     
@@ -437,11 +323,11 @@ export default function ChatModal({
                             </span>
                           </div>
                         )}
-                        <div className={`flex ${isProfessional ? 'justify-end' : 'justify-start'}`}>
-                          <div className={`max-w-[70%] ${isProfessional ? 'order-2' : 'order-1'}`}>
+                        <div className={`flex ${isClient ? 'justify-end' : 'justify-start'}`}>
+                          <div className={`max-w-[70%] ${isClient ? 'order-2' : 'order-1'}`}>
                             <div
                               className={`p-3 rounded-2xl ${
-                                isProfessional
+                                isClient
                                   ? 'bg-purple-600 text-white rounded-br-none'
                                   : 'bg-white border border-gray-200 text-gray-800 rounded-bl-none shadow-sm'
                               }`}
@@ -449,7 +335,7 @@ export default function ChatModal({
                               <p className="text-sm">{msg.content}</p>
                             </div>
                             <span className={`text-xs mt-1 block ${
-                              isProfessional ? 'text-right text-gray-400' : 'text-gray-400'
+                              isClient ? 'text-right text-gray-400' : 'text-gray-400'
                             }`}>
                               {formatTime(msg.created_at)}
                             </span>
@@ -489,7 +375,7 @@ export default function ChatModal({
             <div className="flex-1 flex flex-col items-center justify-center text-gray-400 bg-gray-50">
               <MessageCircle className="w-16 h-16 mb-4 opacity-30" />
               <p className="text-lg font-medium">Selecione uma conversa</p>
-              <p className="text-sm">Escolha um cliente na lista ao lado</p>
+              <p className="text-sm">Escolha um profissional na lista ao lado</p>
               <button 
                 onClick={onClose}
                 className="mt-6 px-6 py-2 text-gray-600 hover:bg-white rounded-lg border border-gray-200 transition-colors"
