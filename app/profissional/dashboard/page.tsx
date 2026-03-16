@@ -18,9 +18,9 @@ import {
   RefreshCw,
   Bell,
   Trash2,
-  MessageCircle  // ← ÍCONE DO CHAT
+  MessageCircle
 } from 'lucide-react'
-import ChatModal from './ChatModal'  // ← IMPORTAR O MODAL
+import ChatModal from './ChatModal'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -29,6 +29,7 @@ const supabase = createClient(
 
 interface Agendamento {
   id: string
+  cliente_id: string
   data_agendamento: string
   hora_inicio: string
   hora_fim: string
@@ -58,9 +59,12 @@ export default function DashboardProfissional() {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   
-  // ← ESTADOS DO CHAT
+  // Estados do chat
   const [isChatOpen, setIsChatOpen] = useState(false)
   const [unreadCount, setUnreadCount] = useState(0)
+  const [chatClientId, setChatClientId] = useState<string | null>(null)
+  const [chatClientName, setChatClientName] = useState<string>('')
+  const [chatClientEmail, setChatClientEmail] = useState<string>('')
 
   useEffect(() => {
     checkUser()
@@ -75,9 +79,8 @@ export default function DashboardProfissional() {
   useEffect(() => {
     if (profissional) {
       fetchAgendamentos()
-      fetchUnreadCount() // ← BUSCAR MENSAGENS NÃO LIDAS
+      fetchUnreadCount()
       
-      // Realtime - atualiza quando cliente agenda
       const channel = supabase
         .channel(`agendamentos:${profissional.id}`)
         .on('postgres_changes', 
@@ -97,7 +100,6 @@ export default function DashboardProfissional() {
         )
         .subscribe()
       
-      // ← REALTIME PARA NOVAS MENSAGENS
       const chatChannel = supabase
         .channel(`chat:${profissional.id}`)
         .on('postgres_changes',
@@ -118,7 +120,6 @@ export default function DashboardProfissional() {
     }
   }, [profissional])
 
-  // ← FUNÇÃO PARA CONTAR MENSAGENS NÃO LIDAS
   async function fetchUnreadCount() {
     if (!profissional?.id) return
     
@@ -131,6 +132,14 @@ export default function DashboardProfissional() {
     if (!error && count !== null) {
       setUnreadCount(count)
     }
+  }
+
+  // Função para abrir chat com cliente específico
+  const handleOpenChat = (clientId: string, clientName: string, clientEmail: string) => {
+    setChatClientId(clientId)
+    setChatClientName(clientName)
+    setChatClientEmail(clientEmail)
+    setIsChatOpen(true)
   }
 
   async function checkUser() {
@@ -166,89 +175,85 @@ export default function DashboardProfissional() {
     }
   }
 
-async function fetchAgendamentos() {
-  if (!profissional) return
-  
-  setRefreshing(true)
-  try {
-    // Query simplificada - sem joins complexos primeiro
-    const { data, error } = await supabase
-      .from('agendamentos')
-      .select('*')
-      .eq('profissional_id', profissional.id)
-      .order('data_agendamento', { ascending: true })
-
-    if (error) {
-      console.error('Erro na query:', error)
-      return
-    }
-
-    console.log('Agendamentos brutos:', data)
+  async function fetchAgendamentos() {
+    if (!profissional) return
     
-    // Se der certo, vamos buscar os dados do cliente separadamente
-    if (data && data.length > 0) {
-      const agendamentosCompletos = await Promise.all(
-        data.map(async (ag: any) => {
-          // Buscar dados do cliente
-          const { data: clienteData } = await supabase
-            .from('professionals')
-            .select('nome, email')
-            .eq('user_id', ag.cliente_id)
-            .single()
-            
-          return {
-            ...ag,
-            cliente: clienteData || { email: 'Cliente não encontrado', nome: '' }
-          }
-        })
-      )
-      setAgendamentos(agendamentosCompletos)
-    } else {
-      setAgendamentos([])
+    setRefreshing(true)
+    try {
+      const { data, error } = await supabase
+        .from('agendamentos')
+        .select('*')
+        .eq('profissional_id', profissional.id)
+        .order('data_agendamento', { ascending: true })
+
+      if (error) {
+        console.error('Erro na query:', error)
+        return
+      }
+
+      console.log('Agendamentos brutos:', data)
+      
+      if (data && data.length > 0) {
+        const agendamentosCompletos = await Promise.all(
+          data.map(async (ag: any) => {
+            const { data: clienteData } = await supabase
+              .from('professionals')
+              .select('nome, email')
+              .eq('user_id', ag.cliente_id)
+              .single()
+              
+            return {
+              ...ag,
+              cliente: clienteData || { email: 'Cliente não encontrado', nome: '' }
+            }
+          })
+        )
+        setAgendamentos(agendamentosCompletos)
+      } else {
+        setAgendamentos([])
+      }
+
+    } catch (error) {
+      console.error('Erro:', error)
+    } finally {
+      setRefreshing(false)
     }
-
-  } catch (error) {
-    console.error('Erro:', error)
-  } finally {
-    setRefreshing(false)
   }
-}
 
-async function atualizarStatus(agendamentoId: string, novoStatus: string) {
-  try {
-    const { error } = await supabase
-      .from('agendamentos')
-      .update({ status: novoStatus })
-      .eq('id', agendamentoId)
+  async function atualizarStatus(agendamentoId: string, novoStatus: string) {
+    try {
+      const { error } = await supabase
+        .from('agendamentos')
+        .update({ status: novoStatus })
+        .eq('id', agendamentoId)
 
-    if (error) throw error
-    fetchAgendamentos()
-  } catch (error) {
-    alert('Erro ao atualizar status')
+      if (error) throw error
+      fetchAgendamentos()
+    } catch (error) {
+      alert('Erro ao atualizar status')
+    }
   }
-}
 
-// ➕ ADICIONAR ESSA FUNÇÃO NOVA - Deletar agendamento
-async function deletarAgendamento(agendamentoId: string) {
-  const confirmar = window.confirm('Tem certeza que deseja excluir este agendamento permanentemente?')
-  
-  if (!confirmar) return
-  
-  try {
-    const { error } = await supabase
-      .from('agendamentos')
-      .delete()
-      .eq('id', agendamentoId)
-
-    if (error) throw error
+  async function deletarAgendamento(agendamentoId: string) {
+    const confirmar = window.confirm('Tem certeza que deseja excluir este agendamento permanentemente?')
     
-    alert('✅ Agendamento excluído com sucesso!')
-    fetchAgendamentos() // Atualiza a lista
-  } catch (error) {
-    console.error('Erro ao deletar:', error)
-    alert('❌ Erro ao excluir agendamento')
+    if (!confirmar) return
+    
+    try {
+      const { error } = await supabase
+        .from('agendamentos')
+        .delete()
+        .eq('id', agendamentoId)
+
+      if (error) throw error
+      
+      alert('✅ Agendamento excluído com sucesso!')
+      fetchAgendamentos()
+    } catch (error) {
+      console.error('Erro ao deletar:', error)
+      alert('❌ Erro ao excluir agendamento')
+    }
   }
-}
 
   async function handleLogout() {
     await supabase.auth.signOut()
@@ -273,7 +278,6 @@ async function deletarAgendamento(agendamentoId: string) {
     }
   }
 
-  // Calcula estatísticas
   const today = new Date().toISOString().split('T')[0]
   const agendamentosHoje = agendamentos.filter(a => 
     a.data_agendamento === today && a.status !== 'cancelado'
@@ -302,7 +306,6 @@ async function deletarAgendamento(agendamentoId: string) {
           <div className="flex items-center gap-4">
             <span className="hidden md:inline">Olá, {profissional?.nome || 'Profissional'}</span>
             
-            {/* ← BOTÃO DE MENSAGENS NOVO */}
             <button
               onClick={() => setIsChatOpen(true)}
               className="relative p-2 bg-white/20 hover:bg-white/30 rounded-full transition-colors"
@@ -484,17 +487,33 @@ async function deletarAgendamento(agendamentoId: string) {
                         </button>
                       </div>
                     )}
-                    {/* 🗑️ BOTÃO DE EXCLUIR - aparece em todos os status */}
-<div className="flex gap-2 mt-3">
-  <button
-    onClick={() => deletarAgendamento(agendamento.id)}
-    className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-gray-500 hover:bg-gray-600 text-white rounded-lg text-sm font-medium transition-colors"
-    title="Excluir agendamento"
-  >
-    <Trash2 className="w-4 h-4" />
-    Excluir
-  </button>
-</div>
+
+                    {/* Botão Excluir */}
+                    <div className="flex gap-2 mt-3">
+                      <button
+                        onClick={() => deletarAgendamento(agendamento.id)}
+                        className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-gray-500 hover:bg-gray-600 text-white rounded-lg text-sm font-medium transition-colors"
+                        title="Excluir agendamento"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                        Excluir
+                      </button>
+                    </div>
+
+                    {/* ⭐ BOTÃO DE CONVERSAR COM CLIENTE - NOVO! */}
+                    <div className="mt-3 pt-3 border-t border-gray-100">
+                      <button
+                        onClick={() => handleOpenChat(
+                          agendamento.cliente_id,
+                          agendamento.cliente?.user_metadata?.nome || agendamento.cliente?.email?.split('@')[0] || 'Cliente',
+                          agendamento.cliente?.email || ''
+                        )}
+                        className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded-lg text-sm font-medium transition-colors"
+                      >
+                        <MessageCircle className="w-4 h-4" />
+                        💬 Conversar com Cliente
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -557,14 +576,18 @@ async function deletarAgendamento(agendamentoId: string) {
         </div>
       </main>
 
-      {/* ← MODAL DE CHAT */}
+      {/* Modal de Chat */}
       <ChatModal 
         isOpen={isChatOpen}
         onClose={() => {
           setIsChatOpen(false)
-          fetchUnreadCount() // Atualiza contador ao fechar
+          setChatClientId(null)
+          fetchUnreadCount()
         }}
         professionalId={profissional?.id}
+        initialClientId={chatClientId}
+        initialClientName={chatClientName}
+        initialClientEmail={chatClientEmail}
       />
     </div>
   )
