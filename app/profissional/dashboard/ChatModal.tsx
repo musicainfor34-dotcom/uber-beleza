@@ -27,9 +27,19 @@ interface ChatModalProps {
   isOpen: boolean
   onClose: () => void
   professionalId: string
+  initialClientId?: string | null
+  initialClientName?: string
+  initialClientEmail?: string
 }
 
-export default function ChatModal({ isOpen, onClose, professionalId }: ChatModalProps) {
+export default function ChatModal({ 
+  isOpen, 
+  onClose, 
+  professionalId, 
+  initialClientId,
+  initialClientName,
+  initialClientEmail 
+}: ChatModalProps) {
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
@@ -37,13 +47,11 @@ export default function ChatModal({ isOpen, onClose, professionalId }: ChatModal
   const [loading, setLoading] = useState(true)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
-  // Buscar conversas do profissional
   useEffect(() => {
     if (!isOpen || !professionalId) return
     
     fetchConversations()
     
-    // Inscrever para atualizações em tempo real
     const subscription = supabase
       .channel('conversations')
       .on('postgres_changes', 
@@ -57,29 +65,23 @@ export default function ChatModal({ isOpen, onClose, professionalId }: ChatModal
     }
   }, [isOpen, professionalId])
 
-  // Buscar mensagens quando selecionar conversa
   useEffect(() => {
-    if (!selectedConversation) return
+    if (!isOpen || !initialClientId || !professionalId) return
     
-    fetchMessages(selectedConversation.id)
-    markAsRead(selectedConversation.id)
-    
-    // Inscrever para novas mensagens em tempo real
-    const subscription = supabase
-      .channel('messages')
-      .on('postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'messages', filter: `conversation_id=eq.${selectedConversation.id}` },
-        (payload) => {
-          setMessages(prev => [...prev, payload.new as Message])
-          scrollToBottom()
-        }
-      )
-      .subscribe()
-
-    return () => {
-      subscription.unsubscribe()
+    const setupInitialChat = async () => {
+      const existingConv = conversations.find(c => c.client_id === initialClientId)
+      
+      if (existingConv) {
+        setSelectedConversation(existingConv)
+      } else {
+        await criarNovaConversa(initialClientId, initialClientName, initialClientEmail)
+      }
     }
-  }, [selectedConversation])
+    
+    if (conversations.length > 0 || !loading) {
+      setupInitialChat()
+    }
+  }, [initialClientId, conversations, loading, professionalId])
 
   const fetchConversations = async () => {
     const { data, error } = await supabase
@@ -104,6 +106,57 @@ export default function ChatModal({ isOpen, onClose, professionalId }: ChatModal
     }
     setLoading(false)
   }
+
+  const criarNovaConversa = async (clientId: string, clientName?: string, clientEmail?: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('conversations')
+        .insert({
+          professional_id: professionalId,
+          client_id: clientId,
+          unread_professional: false,
+          unread_client: false
+        })
+        .select()
+        .single()
+
+      if (error) throw error
+
+      if (data) {
+        const newConv = {
+          ...data,
+          client_name: clientName || clientEmail?.split('@')[0] || 'Cliente',
+          client_email: clientEmail || ''
+        }
+        setConversations(prev => [newConv, ...prev])
+        setSelectedConversation(newConv)
+      }
+    } catch (err) {
+      console.error('Erro ao criar conversa:', err)
+    }
+  }
+
+  useEffect(() => {
+    if (!selectedConversation) return
+    
+    fetchMessages(selectedConversation.id)
+    markAsRead(selectedConversation.id)
+    
+    const subscription = supabase
+      .channel('messages')
+      .on('postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'messages', filter: `conversation_id=eq.${selectedConversation.id}` },
+        (payload) => {
+          setMessages(prev => [...prev, payload.new as Message])
+          scrollToBottom()
+        }
+      )
+      .subscribe()
+
+    return () => {
+      subscription.unsubscribe()
+    }
+  }, [selectedConversation])
 
   const fetchMessages = async (conversationId: string) => {
     const { data } = await supabase
@@ -178,7 +231,6 @@ export default function ChatModal({ isOpen, onClose, professionalId }: ChatModal
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl h-[600px] flex overflow-hidden">
         
-        {/* Lista de Conversas */}
         <div className="w-1/3 border-r border-gray-200 flex flex-col bg-gray-50">
           <div className="p-4 border-b border-gray-200 bg-white">
             <h3 className="font-bold text-lg flex items-center gap-2 text-gray-800">
@@ -197,6 +249,7 @@ export default function ChatModal({ isOpen, onClose, professionalId }: ChatModal
               <div className="p-8 text-center text-gray-400">
                 <MessageCircle className="w-12 h-12 mx-auto mb-2 opacity-30" />
                 <p className="text-sm">Nenhuma conversa ainda</p>
+                <p className="text-xs mt-1">Clique em "Conversar" em um agendamento para iniciar</p>
               </div>
             ) : (
               conversations.map((conv) => (
@@ -237,11 +290,9 @@ export default function ChatModal({ isOpen, onClose, professionalId }: ChatModal
           </div>
         </div>
 
-        {/* Área de Mensagens */}
         <div className="w-2/3 flex flex-col bg-white">
           {selectedConversation ? (
             <>
-              {/* Header */}
               <div className="p-4 border-b border-gray-200 flex justify-between items-center bg-white">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 bg-gradient-to-br from-purple-400 to-pink-500 rounded-full flex items-center justify-center text-white font-bold">
@@ -260,13 +311,12 @@ export default function ChatModal({ isOpen, onClose, professionalId }: ChatModal
                 </button>
               </div>
 
-              {/* Mensagens */}
               <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50">
                 {messages.length === 0 ? (
                   <div className="text-center text-gray-400 mt-8">
                     <User className="w-12 h-12 mx-auto mb-2 opacity-30" />
                     <p className="text-sm">Nenhuma mensagem ainda</p>
-                    <p className="text-xs">Comece a conversa!</p>
+                    <p className="text-xs">Envie uma mensagem para iniciar a conversa!</p>
                   </div>
                 ) : (
                   messages.map((msg, index) => {
@@ -298,9 +348,6 @@ export default function ChatModal({ isOpen, onClose, professionalId }: ChatModal
                               isProfessional ? 'text-right text-gray-400' : 'text-gray-400'
                             }`}>
                               {formatTime(msg.created_at)}
-                              {isProfessional && msg.read && (
-                                <span className="ml-1 text-blue-400">✓✓</span>
-                              )}
                             </span>
                           </div>
                         </div>
@@ -311,7 +358,6 @@ export default function ChatModal({ isOpen, onClose, professionalId }: ChatModal
                 <div ref={messagesEndRef} />
               </div>
 
-              {/* Input */}
               <form onSubmit={sendMessage} className="p-4 border-t border-gray-200 bg-white">
                 <div className="flex gap-2">
                   <input
@@ -335,7 +381,7 @@ export default function ChatModal({ isOpen, onClose, professionalId }: ChatModal
             <div className="flex-1 flex flex-col items-center justify-center text-gray-400 bg-gray-50">
               <MessageCircle className="w-16 h-16 mb-4 opacity-30" />
               <p className="text-lg font-medium">Selecione uma conversa</p>
-              <p className="text-sm">Escolha um cliente para começar a conversar</p>
+              <p className="text-sm">Escolha um cliente na lista ao lado</p>
               <button 
                 onClick={onClose}
                 className="mt-6 px-6 py-2 text-gray-600 hover:bg-white rounded-lg border border-gray-200 transition-colors"
