@@ -28,26 +28,26 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
-// Interfaces
-interface Agendamento {
+// Interfaces atualizadas para o novo schema
+interface Conversa {
   id: string
-  profissional_id: string
-  profissional_nome: string
-  profissional_telefone: string
-  servico: string
-  data: string
-  horario: string
-  status: 'pendente' | 'confirmado' | 'concluido' | 'cancelado'
-  preco: number
+  professional_id: string
+  professional_nome: string
+  professional_email: string
+  last_message?: string
+  unread_client: boolean
+  updated_at: string
+  created_at: string
 }
 
 interface Mensagem {
   id: string
-  agendamento_id: string
-  remetente: 'cliente' | 'profissional'
-  texto: string
+  conversation_id: string
+  sender_id: string
+  sender_type: 'client' | 'professional'
+  content: string
   created_at: string
-  lida: boolean
+  read: boolean
 }
 
 export default function ClienteDashboard() {
@@ -59,18 +59,24 @@ export default function ClienteDashboard() {
   const [profissionais, setProfissionais] = useState<any[]>([])
   const [loadingProfissionais, setLoadingProfissionais] = useState(false)
   
-  // Estados do Chat
+  // Estados do Chat atualizados
   const [chatAberto, setChatAberto] = useState(false)
-  const [agendamentoChat, setAgendamentoChat] = useState<Agendamento | null>(null)
+  const [conversaSelecionada, setConversaSelecionada] = useState<Conversa | null>(null)
   const [mensagens, setMensagens] = useState<Mensagem[]>([])
   const [novaMensagem, setNovaMensagem] = useState('')
-  const [agendamentos, setAgendamentos] = useState<Agendamento[]>([])
+  const [conversas, setConversas] = useState<Conversa[]>([])
+  const [loadingConversas, setLoadingConversas] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     checkUser()
-    carregarAgendamentos()
   }, [])
+
+  useEffect(() => {
+    if (user?.id && abaAtiva === 'conversas') {
+      carregarConversas()
+    }
+  }, [user, abaAtiva])
 
   useEffect(() => {
     if (servicoSelecionado && abaAtiva === 'servicos') {
@@ -92,37 +98,166 @@ export default function ClienteDashboard() {
     setLoading(false)
   }
 
-  async function carregarAgendamentos() {
+  // NOVA FUNÇÃO: Carregar conversas do cliente
+  async function carregarConversas() {
     if (!user?.id) return
     
-    const { data } = await supabase
-      .from('agendamentos')
-      .select(`
-        *,
-        profissional:profissional_id(nome, telefone)
-      `)
-      .eq('cliente_id', user.id)
-      .gte('data_agendamento', new Date().toISOString().split('T')[0])
-      .order('data_agendamento', { ascending: true })
+    setLoadingConversas(true)
+    try {
+      const { data, error } = await supabase
+        .from('conversations')
+        .select(`
+          *,
+          professional:professional_id (
+            nome,
+            email
+          )
+        `)
+        .eq('client_id', user.id)
+        .order('updated_at', { ascending: false })
 
-    if (data) {
-      setAgendamentos(data.map((a: any) => ({
-        id: a.id,
-        profissional_id: a.profissional_id,
-        profissional_nome: a.profissional?.nome || 'Profissional',
-        profissional_telefone: a.profissional?.telefone || '',
-        servico: a.servico?.nome || 'Serviço',
-        data: new Date(a.data_agendamento).toLocaleDateString('pt-BR', {
-          weekday: 'short',
-          day: 'numeric',
-          month: 'short'
-        }),
-        horario: a.hora_inicio,
-        status: a.status,
-        preco: a.valor_total
-      })))
+      if (error) {
+        console.error('Erro ao buscar conversas:', error)
+        return
+      }
+
+      if (data) {
+        const conversasFormatadas = data.map((conv: any) => ({
+          id: conv.id,
+          professional_id: conv.professional_id,
+          professional_nome: conv.professional?.nome || conv.professional?.email?.split('@')[0] || 'Profissional',
+          professional_email: conv.professional?.email || '',
+          last_message: conv.last_message,
+          unread_client: conv.unread_client,
+          updated_at: conv.updated_at,
+          created_at: conv.created_at
+        }))
+        setConversas(conversasFormatadas)
+      }
+    } catch (error) {
+      console.error('Erro:', error)
+    } finally {
+      setLoadingConversas(false)
     }
   }
+
+  // NOVA FUNÇÃO: Buscar mensagens da conversa
+  async function buscarMensagens(conversationId: string) {
+    try {
+      const { data, error } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('conversation_id', conversationId)
+        .order('created_at', { ascending: true })
+
+      if (error) {
+        console.error('Erro ao buscar mensagens:', error)
+        return
+      }
+
+      if (data) {
+        setMensagens(data)
+        scrollToBottom()
+      }
+    } catch (error) {
+      console.error('Erro:', error)
+    }
+  }
+
+  // NOVA FUNÇÃO: Marcar como lida
+  async function marcarComoLida(conversationId: string) {
+    await supabase
+      .from('conversations')
+      .update({ unread_client: false })
+      .eq('id', conversationId)
+  }
+
+  // FUNÇÃO ATUALIZADA: Abrir chat
+  async function abrirChat(conversa: Conversa) {
+    setConversaSelecionada(conversa)
+    setChatAberto(true)
+    await buscarMensagens(conversa.id)
+    await marcarComoLida(conversa.id)
+    
+    // Atualizar lista de conversas para refletir "lida"
+    carregarConversas()
+  }
+
+  // FUNÇÃO ATUALIZADA: Enviar mensagem
+  async function enviarMensagem() {
+    if (!novaMensagem.trim() || !conversaSelecionada || !user?.id) return
+
+    const mensagemTemp: Mensagem = {
+      id: Date.now().toString(),
+      conversation_id: conversaSelecionada.id,
+      sender_id: user.id,
+      sender_type: 'client',
+      content: novaMensagem.trim(),
+      created_at: new Date().toISOString(),
+      read: false
+    }
+
+    // Inserir na tabela messages
+    const { error } = await supabase.from('messages').insert({
+      conversation_id: conversaSelecionada.id,
+      sender_id: user.id,
+      sender_type: 'client',
+      content: novaMensagem.trim(),
+      read: false
+    })
+
+    if (error) {
+      console.error('Erro ao enviar mensagem:', error)
+      return
+    }
+
+    // Atualizar last_message na conversa
+    await supabase
+      .from('conversations')
+      .update({ 
+        last_message: novaMensagem.trim(),
+        updated_at: new Date().toISOString(),
+        unread_professional: true 
+      })
+      .eq('id', conversaSelecionada.id)
+
+    setMensagens(prev => [...prev, mensagemTemp])
+    setNovaMensagem('')
+    scrollToBottom()
+    
+    // Recarregar lista de conversas para atualizar preview
+    carregarConversas()
+  }
+
+  // Realtime: ouvir novas mensagens na conversa ativa
+  useEffect(() => {
+    if (!conversaSelecionada) return
+
+    const subscription = supabase
+      .channel(`messages:${conversaSelecionada.id}`)
+      .on('postgres_changes',
+        { 
+          event: 'INSERT', 
+          schema: 'public', 
+          table: 'messages', 
+          filter: `conversation_id=eq.${conversaSelecionada.id}` 
+        },
+        (payload) => {
+          const novaMsg = payload.new as Mensagem
+          // Só adiciona se não for a mensagem que o próprio usuário acabou de enviar
+          if (novaMsg.sender_id !== user?.id) {
+            setMensagens(prev => [...prev, novaMsg])
+            scrollToBottom()
+            marcarComoLida(conversaSelecionada.id)
+          }
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(subscription)
+    }
+  }, [conversaSelecionada, user?.id])
 
   async function buscarProfissionais(especialidade: string) {
     setLoadingProfissionais(true)
@@ -148,49 +283,6 @@ export default function ClienteDashboard() {
     } finally {
       setLoadingProfissionais(false)
     }
-  }
-
-  async function abrirChat(agendamento: Agendamento) {
-    setAgendamentoChat(agendamento)
-    setChatAberto(true)
-    
-    const { data } = await supabase
-      .from('mensagens')
-      .select('*')
-      .eq('agendamento_id', agendamento.id)
-      .order('created_at', { ascending: true })
-    
-    if (data) setMensagens(data)
-    
-    await supabase
-      .from('mensagens')
-      .update({ lida: true })
-      .eq('agendamento_id', agendamento.id)
-      .eq('remetente', 'profissional')
-  }
-
-  async function enviarMensagem() {
-    if (!novaMensagem.trim() || !agendamentoChat) return
-
-    const mensagemTemp: Mensagem = {
-      id: Date.now().toString(),
-      agendamento_id: agendamentoChat.id,
-      remetente: 'cliente',
-      texto: novaMensagem,
-      created_at: new Date().toISOString(),
-      lida: true
-    }
-
-    await supabase.from('mensagens').insert({
-      agendamento_id: agendamentoChat.id,
-      remetente: 'cliente',
-      texto: novaMensagem,
-      lida: false
-    })
-
-    setMensagens(prev => [...prev, mensagemTemp])
-    setNovaMensagem('')
-    scrollToBottom()
   }
 
   function scrollToBottom() {
@@ -246,6 +338,9 @@ export default function ClienteDashboard() {
   ]
 
   const servicoAtual = servicos.find(s => s.id === servicoSelecionado)
+
+  // Contar conversas não lidas
+  const conversasNaoLidas = conversas.filter(c => c.unread_client).length
 
   if (loading) {
     return (
@@ -379,51 +474,49 @@ export default function ClienteDashboard() {
           </main>
         )}
 
-        {/* CONTEÚDO: CONVERSAS/AGENDAMENTOS */}
+        {/* CONTEÚDO: CONVERSAS - ATUALIZADO */}
         {abaAtiva === 'conversas' && (
           <main className="flex-1 px-4 py-2">
             <div className="space-y-3">
-              {agendamentos.length === 0 ? (
+              {loadingConversas ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="w-8 h-8 text-blue-400 animate-spin" />
+                </div>
+              ) : conversas.length === 0 ? (
                 <div className="text-center py-12 text-slate-400">
-                  <Calendar className="w-16 h-16 mx-auto mb-4 opacity-30" />
-                  <p>Nenhum agendamento ativo</p>
+                  <MessageCircle className="w-16 h-16 mx-auto mb-4 opacity-30" />
+                  <p>Nenhuma conversa ainda</p>
                   <p className="text-sm mt-2">Agende um serviço para conversar</p>
                 </div>
               ) : (
-                agendamentos.map((agend) => (
+                conversas.map((conversa) => (
                   <div 
-                    key={agend.id}
-                    className="bg-slate-800 rounded-2xl p-4 border border-slate-700"
+                    key={conversa.id}
+                    onClick={() => abrirChat(conversa)}
+                    className="bg-slate-800 rounded-2xl p-4 border border-slate-700 active:scale-95 transition-transform"
                   >
-                    <div className="flex items-center gap-3 mb-3">
+                    <div className="flex items-center gap-3">
                       <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white font-bold">
-                        {agend.profissional_nome.charAt(0)}
+                        {conversa.professional_nome.charAt(0)}
                       </div>
                       <div className="flex-1">
-                        <h4 className="font-bold text-white">{agend.profissional_nome}</h4>
-                        <p className="text-sm text-slate-400">{agend.servico}</p>
+                        <div className="flex items-center justify-between">
+                          <h4 className="font-bold text-white">{conversa.professional_nome}</h4>
+                          <span className="text-xs text-slate-400">
+                            {new Date(conversa.updated_at).toLocaleDateString('pt-BR', {
+                              day: 'numeric',
+                              month: 'short'
+                            })}
+                          </span>
+                        </div>
+                        <p className="text-sm text-slate-400 truncate">
+                          {conversa.last_message || 'Clique para conversar'}
+                        </p>
                       </div>
-                      <span className={`text-xs px-2 py-1 rounded-full ${
-                        agend.status === 'confirmado' ? 'bg-green-500/20 text-green-400' :
-                        agend.status === 'pendente' ? 'bg-yellow-500/20 text-yellow-400' :
-                        'bg-gray-500/20 text-gray-400'
-                      }`}>
-                        {agend.status}
-                      </span>
+                      {conversa.unread_client && (
+                        <span className="w-3 h-3 bg-red-500 rounded-full"></span>
+                      )}
                     </div>
-                    
-                    <div className="flex items-center gap-2 text-sm text-slate-400 mb-3">
-                      <Calendar className="w-4 h-4" />
-                      {agend.data} às {agend.horario}
-                    </div>
-
-                    <button 
-                      onClick={() => abrirChat(agend)}
-                      className="w-full flex items-center justify-center gap-2 py-3 bg-blue-500/20 text-blue-400 rounded-xl font-medium border border-blue-500/30"
-                    >
-                      <MessageCircle className="w-5 h-5" />
-                      Conversar
-                    </button>
                   </div>
                 ))
               )}
@@ -448,9 +541,9 @@ export default function ClienteDashboard() {
             >
               <div className="relative">
                 <MessageCircle className="w-6 h-6" />
-                {agendamentos.length > 0 && (
+                {conversasNaoLidas > 0 && (
                   <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full text-[10px] flex items-center justify-center text-white">
-                    {agendamentos.length}
+                    {conversasNaoLidas}
                   </span>
                 )}
               </div>
@@ -501,7 +594,7 @@ export default function ClienteDashboard() {
                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                 }`}
               >
-                Conversas ({agendamentos.length})
+                Conversas ({conversas.length})
               </button>
             </div>
           </div>
@@ -537,34 +630,48 @@ export default function ClienteDashboard() {
               </div>
             ) : (
               <div className="space-y-3">
-                {agendamentos.length === 0 ? (
+                {loadingConversas ? (
+                  <div className="flex items-center justify-center py-12">
+                    <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+                  </div>
+                ) : conversas.length === 0 ? (
                   <div className="text-center py-12 text-gray-400">
-                    <Calendar className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                    <p>Nenhum agendamento ativo</p>
+                    <MessageCircle className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                    <p>Nenhuma conversa ainda</p>
+                    <p className="text-xs mt-2">Agende um serviço para conversar</p>
                   </div>
                 ) : (
-                  agendamentos.map((agend) => (
+                  conversas.map((conversa) => (
                     <div 
-                      key={agend.id}
-                      onClick={() => abrirChat(agend)}
-                      className="w-full text-left p-4 rounded-2xl border border-gray-200 bg-white hover:shadow-md transition-all cursor-pointer"
+                      key={conversa.id}
+                      onClick={() => abrirChat(conversa)}
+                      className={`w-full text-left p-4 rounded-2xl border transition-all cursor-pointer ${
+                        conversa.unread_client 
+                          ? 'border-blue-300 bg-blue-50' 
+                          : 'border-gray-200 bg-white hover:shadow-md'
+                      }`}
                     >
                       <div className="flex items-center gap-3">
                         <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white font-bold">
-                          {agend.profissional_nome.charAt(0)}
+                          {conversa.professional_nome.charAt(0)}
                         </div>
                         <div className="flex-1">
-                          <h4 className="font-bold text-gray-800">{agend.profissional_nome}</h4>
-                          <p className="text-sm text-gray-500">{agend.servico}</p>
-                          <p className="text-xs text-gray-400 mt-1">{agend.data} às {agend.horario}</p>
+                          <div className="flex items-center justify-between">
+                            <h4 className="font-bold text-gray-800">{conversa.professional_nome}</h4>
+                            <span className="text-xs text-gray-400">
+                              {new Date(conversa.updated_at).toLocaleDateString('pt-BR', {
+                                day: '2-digit',
+                                month: '2-digit'
+                              })}
+                            </span>
+                          </div>
+                          <p className={`text-sm truncate ${conversa.unread_client ? 'text-gray-800 font-medium' : 'text-gray-500'}`}>
+                            {conversa.last_message || 'Clique para conversar'}
+                          </p>
                         </div>
-                        <span className={`text-xs px-2 py-1 rounded-full ${
-                          agend.status === 'confirmado' ? 'bg-green-100 text-green-700' :
-                          agend.status === 'pendente' ? 'bg-yellow-100 text-yellow-700' :
-                          'bg-gray-100 text-gray-700'
-                        }`}>
-                          {agend.status}
-                        </span>
+                        {conversa.unread_client && (
+                          <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
+                        )}
                       </div>
                     </div>
                   ))
@@ -657,14 +764,14 @@ export default function ClienteDashboard() {
             <div className="h-full flex flex-col items-center justify-center text-center text-gray-500">
               <MessageCircle className="w-16 h-16 mb-4 opacity-30" />
               <h2 className="text-2xl font-bold text-gray-700 mb-2">Suas Conversas</h2>
-              <p>Selecione um agendamento à esquerda para conversar com o profissional.</p>
+              <p>Selecione uma conversa à esquerda para começar a conversar.</p>
             </div>
           )}
         </main>
       </div>
 
-      {/* MODAL DE CHAT (Funciona em ambos) */}
-      {chatAberto && agendamentoChat && (
+      {/* MODAL DE CHAT ATUALIZADO (Funciona em ambos) */}
+      {chatAberto && conversaSelecionada && (
         <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/60 p-0 md:p-4">
           <div className="bg-slate-900 md:bg-white w-full md:w-full md:max-w-lg h-[85vh] md:h-[600px] rounded-t-3xl md:rounded-3xl shadow-2xl flex flex-col overflow-hidden animate-slide-up border border-slate-700 md:border-gray-200">
             {/* Header */}
@@ -677,10 +784,10 @@ export default function ClienteDashboard() {
                   <ArrowLeft className="w-6 h-6" />
                 </button>
                 <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-lg font-bold">
-                  {agendamentoChat.profissional_nome.charAt(0)}
+                  {conversaSelecionada.professional_nome.charAt(0)}
                 </div>
                 <div>
-                  <h3 className="font-bold">{agendamentoChat.profissional_nome}</h3>
+                  <h3 className="font-bold">{conversaSelecionada.professional_nome}</h3>
                   <p className="text-xs opacity-90 flex items-center gap-1">
                     <span className="w-2 h-2 bg-green-400 rounded-full"></span>
                     Online
@@ -695,54 +802,39 @@ export default function ClienteDashboard() {
               </button>
             </div>
 
-            {/* Info do Agendamento */}
-            <div className="bg-blue-50 dark:bg-slate-800 px-4 py-3 border-b border-blue-100 dark:border-slate-700">
-              <div className="flex items-center justify-between text-sm">
-                <span className="flex items-center gap-2 text-blue-800 dark:text-blue-400">
-                  <Calendar className="w-4 h-4" />
-                  {agendamentoChat.data} às {agendamentoChat.horario}
-                </span>
-                <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                  agendamentoChat.status === 'confirmado' ? 'bg-green-100 text-green-700' :
-                  agendamentoChat.status === 'pendente' ? 'bg-yellow-100 text-yellow-700' :
-                  'bg-gray-100 text-gray-700'
-                }`}>
-                  {agendamentoChat.status}
-                </span>
-              </div>
-            </div>
-
             {/* Mensagens */}
             <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-800 md:bg-gray-100">
-              <div className="text-center text-xs text-slate-500 md:text-gray-400 my-4">Hoje</div>
+              <div className="text-center text-xs text-slate-500 md:text-gray-400 my-4">
+                {new Date().toLocaleDateString('pt-BR')}
+              </div>
               
               {mensagens.length === 0 && (
                 <div className="text-center text-xs text-slate-500 md:text-gray-500 bg-slate-700/50 md:bg-white/50 py-2 px-4 rounded-full mx-auto w-fit">
-                  Inicie a conversa com {agendamentoChat.profissional_nome}
+                  Inicie a conversa com {conversaSelecionada.professional_nome}
                 </div>
               )}
 
               {mensagens.map((msg) => (
                 <div 
                   key={msg.id}
-                  className={`flex ${msg.remetente === 'cliente' ? 'justify-end' : 'justify-start'}`}
+                  className={`flex ${msg.sender_type === 'client' ? 'justify-end' : 'justify-start'}`}
                 >
                   <div 
                     className={`max-w-[75%] px-4 py-3 rounded-2xl shadow-sm ${
-                      msg.remetente === 'cliente' 
+                      msg.sender_type === 'client' 
                         ? 'bg-blue-500 text-white rounded-br-md'
                         : 'bg-slate-700 md:bg-white text-white md:text-gray-800 rounded-bl-md border border-slate-600 md:border-gray-200'
                     }`}
                   >
-                    <p className="text-sm leading-relaxed">{msg.texto}</p>
+                    <p className="text-sm leading-relaxed">{msg.content}</p>
                     <div className={`flex items-center gap-1 mt-1 text-xs ${
-                      msg.remetente === 'cliente' ? 'text-blue-100' : 'text-slate-400 md:text-gray-400'
+                      msg.sender_type === 'client' ? 'text-blue-100' : 'text-slate-400 md:text-gray-400'
                     }`}>
                       <span>{new Date(msg.created_at).toLocaleTimeString('pt-BR', { 
                         hour: '2-digit', 
                         minute: '2-digit' 
                       })}</span>
-                      {msg.remetente === 'cliente' && <span className="ml-1">✓✓</span>}
+                      {msg.sender_type === 'client' && <span className="ml-1">✓✓</span>}
                     </div>
                   </div>
                 </div>
