@@ -1,312 +1,400 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@supabase/supabase-js'
+import { createClient } from '@/lib/supabase/client'
 import { 
+  Search, 
+  MapPin, 
+  Star, 
+  Clock, 
   Scissors, 
-  Paintbrush,
-  Sparkles,
-  Gem,
-  Star,
+  Sparkles, 
+  User,
+  Calendar,
   LogOut,
-  ArrowLeft,
-  Loader2,
-  MessageCircle,
-  MapPin,
-  ChevronRight
+  ChevronRight,
+  Heart
 } from 'lucide-react'
-import ChatModal from '@/app/dashboard/ChatModal'
+import Image from 'next/image'
+import Link from 'next/link'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+interface Profissional {
+  id: string
+  nome: string
+  foto_url: string | null
+  profissao: string
+  especialidades: string[]
+  avaliacao: number
+  total_avaliacoes: number
+  preco_min: number
+  distancia?: string
+  tempo?: string
+}
+
+interface Agendamento {
+  id: string
+  profissional_nome: string
+  servico: string
+  data: string
+  horario: string
+  status: string
+  foto_profissional?: string
+}
 
 export default function ClienteDashboard() {
-  const router = useRouter()
   const [user, setUser] = useState<any>(null)
+  const [profissionais, setProfissionais] = useState<Profissional[]>([])
+  const [agendamentos, setAgendamentos] = useState<Agendamento[]>([])
+  const [searchTerm, setSearchTerm] = useState('')
   const [loading, setLoading] = useState(true)
-  const [servicoSelecionado, setServicoSelecionado] = useState<string | null>(null)
-  const [profissionais, setProfissionais] = useState<any[]>([])
-  const [loadingProfissionais, setLoadingProfissionais] = useState(false)
-  const [isChatOpen, setIsChatOpen] = useState(false)
-  const [unreadCount, setUnreadCount] = useState(0)
+  const [activeTab, setActiveTab] = useState('todos')
+  const router = useRouter()
+  const supabase = createClient()
 
   useEffect(() => {
-    checkUser()
+    getUser()
+    fetchProfissionais()
+    fetchAgendamentos()
   }, [])
 
-  useEffect(() => {
-    if (user?.id) {
-      fetchUnreadCount()
-      const subscription = supabase
-        .channel(`chat-client:${user.id}`)
-        .on('postgres_changes',
-          { event: 'UPDATE', schema: 'public', table: 'conversations', filter: `client_id=eq.${user.id}` },
-          () => fetchUnreadCount()
-        )
-        .subscribe()
-      return () => { supabase.removeChannel(subscription) }
+  async function getUser() {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      router.push('/login')
+      return
     }
-  }, [user])
-
-  async function fetchUnreadCount() {
-    if (!user?.id) return
-    const { count } = await supabase
-      .from('conversations')
-      .select('*', { count: 'exact', head: true })
-      .eq('client_id', user.id)
-      .eq('unread_client', true)
-    if (count !== null) setUnreadCount(count)
+    setUser(user)
   }
 
-  useEffect(() => {
-    if (servicoSelecionado) buscarProfissionais(servicoSelecionado)
-  }, [servicoSelecionado])
+  async function fetchProfissionais() {
+    const { data, error } = await supabase
+      .from('profissionais')
+      .select('*')
+      .eq('status', 'ativo')
+      .order('avaliacao', { ascending: false })
+      .limit(20)
 
-  async function checkUser() {
-    const { data: { session } } = await supabase.auth.getSession()
-    if (!session) { 
-      router.push('/login')
-      return 
+    if (data) {
+      // Mock data para visualização se estiver vazio
+      const mockData: Profissional[] = data.length > 0 ? data : [
+        {
+          id: '1',
+          nome: 'Ana Beauty',
+          foto_url: null,
+          profissao: 'Cabeleireira',
+          especialidades: ['Coloração', 'Corte', 'Escova'],
+          avaliacao: 4.9,
+          total_avaliacoes: 127,
+          preco_min: 80,
+          distancia: '2.5 km',
+          tempo: '15 min'
+        },
+        {
+          id: '2',
+          nome: 'Carlos Style',
+          foto_url: null,
+          profissao: 'Barbeiro',
+          especialidades: ['Barba', 'Corte Masculino', 'Sobrancelha'],
+          avaliacao: 4.8,
+          total_avaliacoes: 89,
+          preco_min: 50,
+          distancia: '4.2 km',
+          tempo: '25 min'
+        },
+        {
+          id: '3',
+          nome: 'Julia Nail',
+          foto_url: null,
+          profissao: 'Manicure',
+          especialidades: ['Unha Gel', 'Spa dos Pés', 'Nail Art'],
+          avaliacao: 5.0,
+          total_avaliacoes: 203,
+          preco_min: 45,
+          distancia: '1.8 km',
+          tempo: '10 min'
+        }
+      ]
+      setProfissionais(mockData)
     }
-    setUser(session.user)
     setLoading(false)
   }
 
-  async function buscarProfissionais(especialidade: string) {
-    setLoadingProfissionais(true)
-    try {
-      const { data, error } = await supabase
-        .from('professionals')
-        .select('*')
-        .eq('ativo', true)
-        .order('created_at', { ascending: false })
+  async function fetchAgendamentos() {
+    // Buscar agendamentos do cliente
+    const { data: agendamentosData } = await supabase
+      .from('agendamentos')
+      .select(`
+        *,
+        profissional:profissional_id(nome, foto_url)
+      `)
+      .eq('cliente_id', user?.id)
+      .gte('data', new Date().toISOString().split('T')[0])
+      .order('data', { ascending: true })
+      .limit(3)
 
-      if (error) throw error
-
-      const filtrados = (data || []).filter((prof: any) => {
-        const especs = prof.especialidade || []
-        return especs.some((esp: string) => 
-          esp.toLowerCase() === especialidade.toLowerCase()
-        )
-      })
-
-      setProfissionais(filtrados)
-    } catch (error) {
-      console.error('Erro ao buscar profissionais:', error)
-    } finally {
-      setLoadingProfissionais(false)
+    if (agendamentosData) {
+      setAgendamentos(agendamentosData.map((a: any) => ({
+        id: a.id,
+        profissional_nome: a.profissional?.nome || 'Profissional',
+        servico: a.servico,
+        data: new Date(a.data).toLocaleDateString('pt-BR'),
+        horario: a.horario,
+        status: a.status,
+        foto_profissional: a.profissional?.foto_url
+      })))
     }
   }
 
-  async function handleLogout() {
+  const handleLogout = async () => {
     await supabase.auth.signOut()
     router.push('/login')
   }
 
-  const servicos = [
-    {
-      id: 'Cabelo',
-      nome: 'Cabelo',
-      descricao: 'Corte, coloração, hidratação',
-      gradient: 'from-yellow-400 to-orange-500',
-      bgColor: 'bg-yellow-400',
-      textColor: 'text-yellow-400',
-      icon: Scissors
-    },
-    {
-      id: 'Maquiagem',
-      nome: 'Maquiagem',
-      descricao: 'Social, festa e noiva',
-      gradient: 'from-pink-400 to-rose-500',
-      bgColor: 'bg-pink-400',
-      textColor: 'text-pink-400',
-      icon: Paintbrush
-    },
-    {
-      id: 'Manicure',
-      nome: 'Manicure',
-      descricao: 'Esmaltação e nail art',
-      gradient: 'from-red-400 to-pink-500',
-      bgColor: 'bg-red-400',
-      textColor: 'text-red-400',
-      icon: Sparkles
-    },
-    {
-      id: 'Pedicure',
-      nome: 'Pedicure',
-      descricao: 'Spa dos pés e cuidados',
-      gradient: 'from-purple-400 to-violet-500',
-      bgColor: 'bg-purple-400',
-      textColor: 'text-purple-400',
-      icon: Gem
-    }
+  const categorias = [
+    { id: 'todos', nome: 'Todos', icon: Sparkles },
+    { id: 'cabelo', nome: 'Cabelo', icon: Scissors },
+    { id: 'barba', nome: 'Barba', icon: User },
+    { id: 'unha', nome: 'Unhas', icon: Sparkles },
+    { id: 'maquiagem', nome: 'Make', icon: Sparkles },
+    { id: 'estetica', nome: 'Estética', icon: Sparkles },
   ]
 
-  const servicoAtual = servicos.find(s => s.id === servicoSelecionado)
+  const filteredProfissionais = profissionais.filter(prof => 
+    prof.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    prof.profissao.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    prof.especialidades.some(esp => esp.toLowerCase().includes(searchTerm.toLowerCase()))
+  )
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-900 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-yellow-400"></div>
+      <div className="min-h-screen bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-rose-500"></div>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-slate-900 pb-20">
-      {/* Header */}
-      <header className="p-6 flex items-center justify-between bg-slate-900 sticky top-0 z-10">
-        <div>
-          <h1 className="text-2xl font-bold text-white">Serviços</h1>
-          <p className="text-slate-400 text-sm">Escolha uma categoria</p>
-        </div>
-        <div className="flex items-center gap-3">
-          {/* Botão de Chat */}
-          <button 
-            onClick={() => setIsChatOpen(true)}
-            className="relative p-2 text-slate-400 hover:text-white transition-colors"
-          >
-            <MessageCircle className="w-6 h-6" />
-            {unreadCount > 0 && (
-              <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center">
-                {unreadCount}
-              </span>
-            )}
-          </button>
-          
-          {/* Botão de Logout */}
-          <button 
-            onClick={handleLogout} 
-            className="p-2 text-slate-400 hover:text-white transition-colors"
-          >
-            <LogOut className="w-5 h-5" />
-          </button>
-          
-          {/* Avatar */}
-          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center">
-            <span className="text-slate-900 font-bold text-sm">
-              {user?.email?.charAt(0).toUpperCase()}
-            </span>
-          </div>
-        </div>
-      </header>
-
-      {/* Conteúdo Principal */}
-      <main className="px-4 py-2">
-        {!servicoSelecionado ? (
-          /* Grid de Serviços 2x2 */
-          <div className="grid grid-cols-2 gap-4">
-            {servicos.map((servico) => (
-              <button
-                key={servico.id}
-                onClick={() => setServicoSelecionado(servico.id)}
-                className="aspect-square bg-slate-800 rounded-2xl p-4 flex flex-col items-center justify-center gap-3 active:scale-95 transition-transform border border-slate-700 hover:border-slate-600 shadow-lg"
-              >
-                <div className={`w-16 h-16 rounded-2xl ${servico.bgColor} bg-opacity-20 flex items-center justify-center`}>
-                  <servico.icon className={`w-8 h-8 ${servico.textColor}`} />
-                </div>
-                <div className="text-center">
-                  <h3 className="text-white font-bold text-lg">{servico.nome}</h3>
-                  <p className="text-slate-400 text-xs mt-1">Ver profissionais</p>
-                </div>
-              </button>
-            ))}
-          </div>
-        ) : (
-          /* Lista de Profissionais */
-          <div className="space-y-4">
-            {/* Botão Voltar */}
+    <div className="min-h-screen bg-gray-50 pb-24">
+      {/* Header Fixo com Gradiente */}
+      <div className="sticky top-0 z-50 bg-gradient-to-r from-rose-500 via-pink-500 to-purple-600 text-white shadow-lg">
+        <div className="max-w-md mx-auto px-4 py-4">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <p className="text-xs opacity-90">Bem-vinda(o) de volta 👋</p>
+              <h1 className="text-lg font-bold">
+                {user?.email?.split('@')[0] || 'Cliente'}
+              </h1>
+            </div>
             <button 
-              onClick={() => setServicoSelecionado(null)}
-              className="flex items-center gap-2 text-slate-400 hover:text-white mb-4 transition-colors"
+              onClick={handleLogout}
+              className="p-2 bg-white/20 rounded-full backdrop-blur-sm hover:bg-white/30 transition"
             >
-              <ArrowLeft className="w-5 h-5" />
-              <span>Voltar</span>
+              <LogOut className="w-5 h-5" />
             </button>
+          </div>
 
-            {/* Card do Serviço Selecionado */}
-            {servicoAtual && (
-              <div className="bg-slate-800 rounded-2xl p-4 mb-6 border border-slate-700 shadow-lg">
-                <div className="flex items-center gap-4">
-                  <div className={`w-14 h-14 rounded-xl ${servicoAtual.bgColor} bg-opacity-20 flex items-center justify-center`}>
-                    <servicoAtual.icon className={`w-7 h-7 ${servicoAtual.textColor}`} />
+          {/* Search Bar Flutuante */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Buscar profissionais, serviços..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-10 pr-4 py-3 bg-white text-gray-800 rounded-xl shadow-md focus:outline-none focus:ring-2 focus:ring-white/50 placeholder:text-gray-400"
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="max-w-md mx-auto px-4 py-6 space-y-6">
+        {/* Categorias Scrolláveis */}
+        <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
+          {categorias.map((cat) => {
+            const Icon = cat.icon
+            return (
+              <button
+                key={cat.id}
+                onClick={() => setActiveTab(cat.id)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-full whitespace-nowrap transition-all ${
+                  activeTab === cat.id
+                    ? 'bg-gradient-to-r from-rose-500 to-pink-500 text-white shadow-md'
+                    : 'bg-white text-gray-600 border border-gray-200 hover:border-rose-300'
+                }`}
+              >
+                <Icon className="w-4 h-4" />
+                <span className="text-sm font-medium">{cat.nome}</span>
+              </button>
+            )
+          })}
+        </div>
+
+        {/* Próximos Agendamentos (se houver) */}
+        {agendamentos.length > 0 && (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold text-gray-800">Seus Agendamentos</h2>
+              <Link href="/cliente/agendamentos" className="text-sm text-rose-500 font-medium">
+                Ver todos
+              </Link>
+            </div>
+            
+            <div className="space-y-3">
+              {agendamentos.map((agend) => (
+                <div key={agend.id} className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex items-center gap-4">
+                  <div className="w-12 h-12 bg-gradient-to-br from-rose-100 to-pink-100 rounded-full flex items-center justify-center text-2xl">
+                    {agend.foto_profissional ? (
+                      <img src={agend.foto_profissional} className="w-full h-full rounded-full object-cover" />
+                    ) : (
+                      <span>👤</span>
+                    )}
                   </div>
-                  <div>
-                    <h2 className="text-xl font-bold text-white">{servicoAtual.nome}</h2>
-                    <p className="text-slate-400 text-sm">
-                      {loadingProfissionais ? 'Carregando...' : `${profissionais.length} profissionais`}
-                    </p>
+                  <div className="flex-1">
+                    <h3 className="font-semibold text-gray-800">{agend.profissional_nome}</h3>
+                    <p className="text-sm text-gray-500">{agend.servico}</p>
+                    <div className="flex items-center gap-2 mt-1 text-xs text-rose-500 font-medium">
+                      <Calendar className="w-3 h-3" />
+                      {agend.data} às {agend.horario}
+                    </div>
+                  </div>
+                  <div className={`px-3 py-1 rounded-full text-xs font-medium ${
+                    agend.status === 'confirmado' ? 'bg-green-100 text-green-700' :
+                    agend.status === 'pendente' ? 'bg-yellow-100 text-yellow-700' :
+                    'bg-gray-100 text-gray-700'
+                  }`}>
+                    {agend.status}
                   </div>
                 </div>
-              </div>
-            )}
+              ))}
+            </div>
+          </div>
+        )}
 
-            {/* Lista de Profissionais */}
-            {loadingProfissionais ? (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 className="w-8 h-8 text-yellow-400 animate-spin" />
-              </div>
-            ) : profissionais.length === 0 ? (
-              <div className="text-center py-12 text-slate-400 bg-slate-800 rounded-2xl border border-slate-700">
-                <p>Nenhum profissional disponível para esta categoria.</p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {profissionais.map((prof) => (
-                  <div 
-                    key={prof.id}
-                    onClick={() => router.push(`/profissional/${prof.id}`)}
-                    className="bg-slate-800 rounded-2xl p-4 border border-slate-700 active:scale-95 transition-transform shadow-lg cursor-pointer hover:border-slate-600"
-                  >
-                    <div className="flex items-center gap-3">
-                      {/* Avatar do Profissional */}
-                      <div className="relative">
-                        <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-pink-400 to-purple-600 flex items-center justify-center text-white font-bold text-xl">
-                          {prof.nome?.charAt(0).toUpperCase() || 'P'}
-                        </div>
-                        {prof.ativo && (
-                          <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-green-500 border-2 border-slate-800 rounded-full"></div>
+        {/* Profissionais Disponíveis */}
+        <div>
+          <h2 className="text-lg font-bold text-gray-800 mb-4">Profissionais Disponíveis</h2>
+          
+          <div className="grid gap-4">
+            {filteredProfissionais.map((prof) => (
+              <div 
+                key={prof.id} 
+                className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-all group"
+              >
+                <div className="p-4">
+                  <div className="flex gap-4">
+                    {/* Foto */}
+                    <div className="relative">
+                      <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-rose-100 to-pink-100 flex items-center justify-center text-3xl overflow-hidden">
+                        {prof.foto_url ? (
+                          <img src={prof.foto_url} alt={prof.nome} className="w-full h-full object-cover" />
+                        ) : (
+                          <span>👤</span>
                         )}
                       </div>
-                      
-                      {/* Info */}
-                      <div className="flex-1">
-                        <h4 className="font-bold text-white text-lg">{prof.nome}</h4>
-                        <div className="flex items-center gap-1 text-sm text-slate-400">
-                          <Star className="w-3 h-3 text-yellow-400 fill-current" />
-                          <span>{prof.avaliacao || 5.0}</span>
-                          <span className="mx-1">•</span>
-                          <MapPin className="w-3 h-3" />
-                          <span className="text-xs">{prof.cidade || 'Sem cidade'}</span>
+                      <div className="absolute -bottom-1 -right-1 bg-white rounded-full p-1 shadow-md">
+                        <Heart className="w-4 h-4 text-rose-400 fill-rose-400" />
+                      </div>
+                    </div>
+
+                    {/* Info */}
+                    <div className="flex-1">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <h3 className="font-bold text-gray-800 text-lg">{prof.nome}</h3>
+                          <p className="text-rose-500 text-sm font-medium">{prof.profissao}</p>
+                        </div>
+                        <div className="flex items-center gap-1 bg-yellow-50 px-2 py-1 rounded-lg">
+                          <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
+                          <span className="text-sm font-bold text-gray-700">{prof.avaliacao}</span>
                         </div>
                       </div>
-                      
-                      {/* Preço e Seta */}
-                      <div className="text-right">
-                        <span className="block text-lg font-bold text-white">
-                          R$ {prof.preco_hora || '0'}
+
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {prof.especialidades.slice(0, 3).map((esp, idx) => (
+                          <span key={idx} className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded-full">
+                            {esp}
+                          </span>
+                        ))}
+                      </div>
+
+                      <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100">
+                        <div className="flex items-center gap-3 text-sm text-gray-500">
+                          {prof.distancia && (
+                            <span className="flex items-center gap-1">
+                              <MapPin className="w-3 h-3" /> {prof.distancia}
+                            </span>
+                          )}
+                          <span className="flex items-center gap-1">
+                            <Clock className="w-3 h-3" /> {prof.tempo || '30 min'}
+                          </span>
+                        </div>
+                        <span className="font-bold text-gray-800">
+                          R$ {prof.preco_min.toFixed(0)}+
                         </span>
-                        <ChevronRight className="w-5 h-5 text-slate-400 mt-1 ml-auto" />
                       </div>
                     </div>
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </main>
 
-      {/* Chat Modal */}
-      <ChatModal 
-        isOpen={isChatOpen}
-        onClose={() => setIsChatOpen(false)}
-        userId={user?.id}
-        userType="client"
-      />
+                  {/* Botão Agendar */}
+                  <Link 
+                    href={`/profissional/${prof.id}`}
+                    className="mt-4 flex items-center justify-center gap-2 w-full py-3 bg-gradient-to-r from-rose-500 to-pink-500 text-white rounded-xl font-semibold shadow-md hover:shadow-lg transition-all group-hover:scale-[1.02]"
+                  >
+                    <Calendar className="w-4 h-4" />
+                    Agendar Horário
+                    <ChevronRight className="w-4 h-4" />
+                  </Link>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {filteredProfissionais.length === 0 && (
+            <div className="text-center py-12 text-gray-400">
+              <Search className="w-12 h-12 mx-auto mb-3 opacity-30" />
+              <p>Nenhum profissional encontrado</p>
+              <p className="text-sm">Tente buscar por outro termo</p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Bottom Navigation */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-4 max-w-md mx-auto">
+        <div className="flex justify-around items-center">
+          <button className="flex flex-col items-center gap-1 text-rose-500">
+            <div className="p-2 bg-rose-50 rounded-xl">
+              <Search className="w-5 h-5" />
+            </div>
+            <span className="text-xs font-medium">Buscar</span>
+          </button>
+          
+          <button className="flex flex-col items-center gap-1 text-gray-400 hover:text-gray-600">
+            <div className="p-2 hover:bg-gray-50 rounded-xl transition">
+              <Calendar className="w-5 h-5" />
+            </div>
+            <span className="text-xs font-medium">Agenda</span>
+          </button>
+          
+          <button className="flex flex-col items-center gap-1 text-gray-400 hover:text-gray-600">
+            <div className="p-2 hover:bg-gray-50 rounded-xl transition">
+              <Heart className="w-5 h-5" />
+            </div>
+            <span className="text-xs font-medium">Favoritos</span>
+          </button>
+          
+          <button className="flex flex-col items-center gap-1 text-gray-400 hover:text-gray-600">
+            <div className="p-2 hover:bg-gray-50 rounded-xl transition">
+              <User className="w-5 h-5" />
+            </div>
+            <span className="text-xs font-medium">Perfil</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Safe area para mobile */}
+      <div className="h-8"></div>
     </div>
   )
 }
