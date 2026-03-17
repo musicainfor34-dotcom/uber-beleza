@@ -76,9 +76,6 @@ export default function ClienteDashboard() {
   useEffect(() => {
     if (user) {
       carregarAgendamentos()
-      // Atualiza a cada 10 segundos
-      const interval = setInterval(carregarAgendamentos, 10000)
-      return () => clearInterval(interval)
     }
   }, [user])
 
@@ -97,74 +94,60 @@ export default function ClienteDashboard() {
   }
 
   async function carregarAgendamentos() {
-    const { data, error } = await supabase
-      .from('agendamentos')
-      .select(`
-        *,
-        profissional:profissional_id(nome, foto_url, telefone)
-      `)
-      .eq('cliente_id', user?.id)
-      .order('data', { ascending: true })
-      .gte('data', new Date().toISOString().split('T')[0]) // Apenas futuros
-
-    if (data) {
-      setAgendamentos(data.map((a: any) => ({
-        id: a.id,
-        profissional_id: a.profissional_id,
-        profissional_nome: a.profissional?.nome || 'Profissional',
-        profissional_foto: a.profissional?.foto_url || '',
-        profissional_telefone: a.profissional?.telefone || '',
-        servico: a.servico,
-        data: new Date(a.data).toLocaleDateString('pt-BR', { 
-          weekday: 'short', 
-          day: 'numeric', 
-          month: 'short' 
-        }),
-        horario: a.horario,
-        status: a.status,
-        endereco: a.endereco,
-        preco: a.preco
-      })))
-    }
+    // Mock por enquanto - depois conecta com a tabela real
+    setAgendamentos([
+      {
+        id: '1',
+        profissional_id: 'uuid-1',
+        profissional_nome: 'Sandra Lima',
+        profissional_foto: 'https://images.unsplash.com/photo-1594744803329-e58b31de8bf5?w=200&h=200&fit=crop',
+        profissional_telefone: '(11) 98765-4321',
+        servico: 'Coloração e Corte',
+        data: 'Sex, 18 Mar',
+        horario: '14:00',
+        status: 'confirmado',
+        endereco: 'Av. Paulista, 1000 - São Paulo',
+        preco: 150
+      },
+      {
+        id: '2',
+        profissional_id: 'uuid-2',
+        profissional_nome: 'Helena Costa',
+        profissional_foto: 'https://images.unsplash.com/photo-1580618672591-eb180b1a973f?w=200&h=200&fit=crop',
+        profissional_telefone: '(11) 91234-5678',
+        servico: 'Maquiagem Social',
+        data: 'Sáb, 19 Mar',
+        horario: '10:00',
+        status: 'pendente',
+        preco: 120
+      }
+    ])
   }
 
   async function abrirChat(agendamento: Agendamento) {
     setAgendamentoChat(agendamento)
     setChatAberto(true)
-    carregarMensagens(agendamento.id)
-    
-    // Marcar mensagens como lidas
-    await supabase
-      .from('mensagens')
-      .update({ lida: true })
-      .eq('agendamento_id', agendamento.id)
-      .eq('remetente', 'profissional')
-  }
-
-  async function carregarMensagens(agendamentoId: string) {
-    const { data } = await supabase
-      .from('mensagens')
-      .select('*')
-      .eq('agendamento_id', agendamentoId)
-      .order('created_at', { ascending: true })
-
-    if (data) setMensagens(data)
+    // Carregar mensagens do Supabase aqui depois
+    setMensagens([])
   }
 
   async function enviarMensagem() {
     if (!novaMensagem.trim() || !agendamentoChat) return
 
-    const mensagem = {
+    // Criar mensagem temporária para exibição imediata (TIPADA corretamente)
+    const mensagemTemp: Mensagem = {
+      id: Date.now().toString(),
       agendamento_id: agendamentoChat.id,
-      remetente: 'cliente',
+      remetente: 'cliente', // Agora é literal 'cliente', não string genérica
       texto: novaMensagem,
-      lida: false,
-      created_at: new Date().toISOString()
+      created_at: new Date().toISOString(),
+      lida: true
     }
 
-    await supabase.from('mensagens').insert(mensagem)
+    // Salvar no Supabase (aqui você implementa depois)
+    // await supabase.from('mensagens').insert({...})
 
-    setMensagens([...mensagens, { ...mensagem, id: Date.now().toString() }])
+    setMensagens(prev => [...prev, mensagemTemp])
     setNovaMensagem('')
     scrollToBottom()
   }
@@ -177,35 +160,6 @@ export default function ClienteDashboard() {
     await supabase.auth.signOut()
     router.push('/login')
   }
-
-  // Mock de agendamentos para teste visual
-  const agendamentosMock: Agendamento[] = [
-    {
-      id: '1',
-      profissional_id: 'uuid-1',
-      profissional_nome: 'Sandra Lima',
-      profissional_foto: 'https://images.unsplash.com/photo-1594744803329-e58b31de8bf5?w=200&h=200&fit=crop',
-      profissional_telefone: '(11) 98765-4321',
-      servico: 'Coloração e Corte',
-      data: 'Sex, 18 Mar',
-      horario: '14:00',
-      status: 'confirmado',
-      endereco: 'Av. Paulista, 1000 - São Paulo',
-      preco: 150
-    },
-    {
-      id: '2',
-      profissional_id: 'uuid-2',
-      profissional_nome: 'Helena Costa',
-      profissional_foto: 'https://images.unsplash.com/photo-1580618672591-eb180b1a973f?w=200&h=200&fit=crop',
-      profissional_telefone: '(11) 91234-5678',
-      servico: 'Maquiagem Social',
-      data: 'Sáb, 19 Mar',
-      horario: '10:00',
-      status: 'pendente',
-      preco: 120
-    }
-  ]
 
   if (loading) {
     return (
@@ -252,8 +206,7 @@ export default function ClienteDashboard() {
         {/* ABA: MEUS AGENDAMENTOS */}
         {abaAtiva === 'agendamentos' && (
           <div className="space-y-4">
-            {/* Agendamentos Reais (ou Mock) */}
-            {(agendamentos.length > 0 ? agendamentos : agendamentosMock).map((agend) => (
+            {agendamentos.map((agend) => (
               <div key={agend.id} className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
                 {/* Header do Card */}
                 <div className="flex items-start justify-between mb-4">
@@ -303,11 +256,6 @@ export default function ClienteDashboard() {
                   >
                     <MessageCircle className="w-5 h-5" />
                     Conversar
-                    {mensagens.filter(m => m.remetente === 'profissional' && !m.lida && m.agendamento_id === agend.id).length > 0 && (
-                      <span className="ml-1 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
-                        {mensagens.filter(m => m.remetente === 'profissional' && !m.lida && m.agendamento_id === agend.id).length}
-                      </span>
-                    )}
                   </button>
                   
                   <button 
@@ -343,7 +291,7 @@ export default function ClienteDashboard() {
           </div>
         )}
 
-        {/* ABA: NOVO AGENDAMENTO (simplificada) */}
+        {/* ABA: NOVO AGENDAMENTO */}
         {abaAtiva === 'novo' && (
           <div className="grid grid-cols-2 gap-4">
             {[
@@ -368,12 +316,12 @@ export default function ClienteDashboard() {
         )}
       </main>
 
-      {/* MODAL DE CHAT MESSENGER */}
+      {/* MODAL DE CHAT */}
       {chatAberto && agendamentoChat && (
         <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center sm:p-4">
           <div className="bg-white w-full max-w-md h-[90vh] sm:h-[650px] sm:rounded-3xl rounded-t-3xl shadow-2xl flex flex-col overflow-hidden animate-slide-up">
             
-            {/* Header Messenger Style */}
+            {/* Header */}
             <div className="bg-gradient-to-r from-blue-500 to-blue-600 text-white px-4 py-4 flex items-center justify-between shadow-md">
               <div className="flex items-center gap-3">
                 <button 
@@ -409,7 +357,7 @@ export default function ClienteDashboard() {
               </button>
             </div>
 
-            {/* Info do Agendamento no Chat */}
+            {/* Info do Agendamento */}
             <div className="bg-blue-50 px-4 py-3 border-b border-blue-100 flex items-center justify-between">
               <div className="flex items-center gap-2 text-sm text-blue-800">
                 <Calendar className="w-4 h-4" />
@@ -426,12 +374,8 @@ export default function ClienteDashboard() {
 
             {/* Mensagens */}
             <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-100">
-              {/* Data separadora */}
-              <div className="text-center text-xs text-gray-400 my-4">
-                Hoje
-              </div>
-
-              {/* Mensagem de sistema */}
+              <div className="text-center text-xs text-gray-400 my-4">Hoje</div>
+              
               <div className="text-center text-xs text-gray-500 bg-white/50 py-2 px-4 rounded-full mx-auto w-fit">
                 Agendamento confirmado! Você pode conversar com {agendamentoChat.profissional_nome.split(' ')[0]} aqui.
               </div>
@@ -456,9 +400,7 @@ export default function ClienteDashboard() {
                         hour: '2-digit', 
                         minute: '2-digit' 
                       })}</span>
-                      {msg.remetente === 'cliente' && (
-                        <span className="ml-1">✓✓</span>
-                      )}
+                      {msg.remetente === 'cliente' && <span className="ml-1">✓✓</span>}
                     </div>
                   </div>
                 </div>
@@ -466,7 +408,7 @@ export default function ClienteDashboard() {
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Input Messenger Style */}
+            {/* Input */}
             <div className="p-3 bg-white border-t border-gray-200">
               <div className="flex items-center gap-2 bg-gray-100 rounded-full px-4 py-2">
                 <input
@@ -505,11 +447,6 @@ export default function ClienteDashboard() {
               <Calendar className="w-5 h-5" />
             </div>
             <span className="text-xs font-medium">Agendamentos</span>
-            {mensagens.filter(m => m.remetente === 'profissional' && !m.lida).length > 0 && (
-              <span className="absolute top-2 left-10 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
-                {mensagens.filter(m => m.remetente === 'profissional' && !m.lida).length}
-              </span>
-            )}
           </button>
           
           <button 
