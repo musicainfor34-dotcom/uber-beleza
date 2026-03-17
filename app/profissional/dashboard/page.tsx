@@ -93,6 +93,8 @@ export default function DashboardProfissional() {
     if (profissional) {
       fetchAgendamentos()
       fetchUnreadCount()
+
+      
       
       const channel = supabase
         .channel(`agendamentos:${profissional.id}`)
@@ -132,6 +134,21 @@ export default function DashboardProfissional() {
       }
     }
   }, [profissional])
+
+  // ⭐ COLE AQUI - novo useEffect na linha 137:
+  useEffect(() => {
+    if (isEditModalOpen && profissional) {
+      console.log('Preenchendo formulário:', profissional)
+      setEditForm({
+        nome: profissional.nome || '',
+        telefone: profissional.telefone || '',
+        cidade: profissional.cidade || '',
+        preco_hora: profissional.preco_hora?.toString() || '',
+        especialidade: profissional.especialidade?.join(', ') || ''
+      })
+    }
+  }, [isEditModalOpen, profissional])
+
 
   async function fetchUnreadCount() {
     if (!profissional?.id) return
@@ -624,13 +641,23 @@ export default function DashboardProfissional() {
             </div>
 
             {/* ⭐ BOTÃO EDITAR PERFIL CORRIGIDO */}
-            <button 
-              onClick={handleOpenEditModal}
-              className="w-full mt-6 px-4 py-3 border-2 border-purple-500 text-purple-600 rounded-xl font-medium hover:bg-purple-50 transition-colors flex items-center justify-center gap-2"
-            >
-              <span>⚙️</span>
-              Editar Perfil
-            </button>
+          <button 
+  onClick={() => {
+    // Preenche o formulário NA HORA de abrir
+    setEditForm({
+      nome: profissional?.nome || '',
+      telefone: profissional?.telefone || '',
+      cidade: profissional?.cidade || '',
+      preco_hora: profissional?.preco_hora?.toString() || '',
+      especialidade: profissional?.especialidade?.join(', ') || ''
+    })
+    setIsEditModalOpen(true)
+  }}
+  className="w-full mt-6 px-4 py-3 border-2 border-purple-500 text-purple-600 rounded-xl font-medium hover:bg-purple-50 transition-colors flex items-center justify-center gap-2"
+>
+  <span>⚙️</span>
+  Editar Perfil
+</button>
           </div>
         </div>
       </main>
@@ -655,7 +682,7 @@ export default function DashboardProfissional() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Nome</label>
                   <input
                     type="text"
-                    value={editForm.nome}
+                    value={editForm.nome || profissional?.nome || ''}
                     onChange={(e) => setEditForm({...editForm, nome: e.target.value})}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                     placeholder="Seu nome"
@@ -666,7 +693,7 @@ export default function DashboardProfissional() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Telefone</label>
                   <input
                     type="text"
-                    value={editForm.telefone}
+value={editForm.telefone || profissional?.telefone || ''}
                     onChange={(e) => setEditForm({...editForm, telefone: e.target.value})}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                     placeholder="(99) 99999-9999"
@@ -677,8 +704,7 @@ export default function DashboardProfissional() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Cidade</label>
                   <input
                     type="text"
-                    value={editForm.cidade}
-                    onChange={(e) => setEditForm({...editForm, cidade: e.target.value})}
+value={editForm.cidade || profissional?.cidade || ''}                    onChange={(e) => setEditForm({...editForm, cidade: e.target.value})}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                     placeholder="Sua cidade"
                   />
@@ -688,8 +714,7 @@ export default function DashboardProfissional() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Preço/Hora (R$)</label>
                   <input
                     type="number"
-                    value={editForm.preco_hora}
-                    onChange={(e) => setEditForm({...editForm, preco_hora: e.target.value})}
+value={editForm.preco_hora || profissional?.preco_hora?.toString() || ''}                    onChange={(e) => setEditForm({...editForm, preco_hora: e.target.value})}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                     placeholder="80"
                   />
@@ -699,7 +724,7 @@ export default function DashboardProfissional() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Especialidades</label>
                   <input
                     type="text"
-                    value={editForm.especialidade}
+                    value={editForm.especialidade || profissional?.especialidade?.join(', ') || ''}
                     onChange={(e) => setEditForm({...editForm, especialidade: e.target.value})}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                     placeholder="Cabelo, Unhas, Maquiagem"
