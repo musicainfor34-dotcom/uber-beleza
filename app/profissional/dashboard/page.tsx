@@ -87,7 +87,6 @@ export default function DashboardProfissional() {
     }
   }, [user])
 
-  // Sincroniza o formulário sempre que o modal abrir ou o profissional carregar
   useEffect(() => {
     if (isEditModalOpen && profissional) {
       setEditForm({
@@ -196,7 +195,15 @@ export default function DashboardProfissional() {
               .select('nome, email')
               .eq('user_id', ag.cliente_id)
               .single()
-            return { ...ag, cliente: clienteData || { email: 'Cliente não encontrado', nome: '' } }
+            
+            // Ajustando o objeto para bater com a Interface (colocando o nome dentro de user_metadata)
+            return { 
+                ...ag, 
+                cliente: {
+                    email: clienteData?.email || 'Sem email',
+                    user_metadata: { nome: clienteData?.nome || 'Cliente' }
+                }
+            }
           })
         )
         setAgendamentos(agendamentosCompletos)
@@ -228,7 +235,6 @@ export default function DashboardProfissional() {
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900">
-      {/* Header */}
       <header className="bg-gradient-to-r from-purple-600 to-pink-500 text-white p-4 shadow-lg">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <h1 className="text-2xl font-bold">Beleza Connect</h1>
@@ -255,7 +261,10 @@ export default function DashboardProfissional() {
                 <div>
                   <h3 className="font-bold">{ag.servico?.nome}</h3>
                   <span className={`text-xs px-2 py-1 rounded-full border ${getStatusColor(ag.status)}`}>{ag.status}</span>
-                  <p className="text-sm text-gray-600 mt-1">Cliente: {ag.cliente?.nome || ag.cliente?.email}</p>
+                  {/* CORREÇÃO AQUI: Acessando via user_metadata para não dar erro no build */}
+                  <p className="text-sm text-gray-600 mt-1">
+                    Cliente: {ag.cliente?.user_metadata?.nome || ag.cliente?.email}
+                  </p>
                 </div>
                 <p className="font-bold text-purple-600">R$ {ag.valor_total?.toFixed(2)}</p>
               </div>
@@ -264,7 +273,12 @@ export default function DashboardProfissional() {
                 <div className="flex items-center gap-1"><Clock className="w-4 h-4" /> {ag.hora_inicio}</div>
               </div>
               <div className="mt-4 flex gap-2">
-                <button onClick={() => handleOpenChat(ag.cliente_id, ag.cliente?.nome, ag.cliente?.email)} className="flex-1 py-2 bg-purple-50 text-purple-700 rounded-lg text-sm font-medium">Chat</button>
+                <button 
+                    onClick={() => handleOpenChat(ag.cliente_id, ag.cliente?.user_metadata?.nome || 'Cliente', ag.cliente?.email)} 
+                    className="flex-1 py-2 bg-purple-50 text-purple-700 rounded-lg text-sm font-medium"
+                >
+                    Chat
+                </button>
                 {ag.status === 'pendente' && <button onClick={() => atualizarStatus(ag.id, 'confirmado')} className="flex-1 py-2 bg-green-500 text-white rounded-lg text-sm">Confirmar</button>}
                 <button onClick={() => deletarAgendamento(ag.id)} className="p-2 text-red-500"><Trash2 className="w-5 h-5" /></button>
               </div>
@@ -272,7 +286,6 @@ export default function DashboardProfissional() {
           ))}
         </div>
 
-        {/* Perfil Sidebar */}
         <div className="bg-white p-6 rounded-xl border shadow-sm h-fit">
           <div className="text-center mb-6">
             <div className="w-20 h-20 bg-purple-100 text-purple-600 rounded-full mx-auto flex items-center justify-center text-2xl font-bold mb-2">
@@ -290,7 +303,6 @@ export default function DashboardProfissional() {
         </div>
       </main>
 
-      {/* MODAL DE EDIÇÃO - FIX: Cor do texto nos inputs */}
       {isEditModalOpen && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
