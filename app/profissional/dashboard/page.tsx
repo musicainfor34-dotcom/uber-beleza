@@ -18,7 +18,9 @@ import {
   RefreshCw,
   Bell,
   Trash2,
-  MessageCircle
+  MessageCircle,
+  X,
+  Save
 } from 'lucide-react'
 import ChatModal from './ChatModal'
 
@@ -66,6 +68,17 @@ export default function DashboardProfissional() {
   const [chatClientName, setChatClientName] = useState<string>('')
   const [chatClientEmail, setChatClientEmail] = useState<string>('')
 
+  // ⭐ NOVO: Estados para edição do perfil
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false)
+  const [savingProfile, setSavingProfile] = useState(false)
+  const [editForm, setEditForm] = useState({
+    nome: '',
+    telefone: '',
+    cidade: '',
+    preco_hora: '',
+    especialidade: ''
+  })
+
   useEffect(() => {
     checkUser()
   }, [])
@@ -75,6 +88,19 @@ export default function DashboardProfissional() {
       fetchProfissional()
     }
   }, [user])
+
+  // ⭐ NOVO: Quando abrir modal, preenche com dados atuais
+  useEffect(() => {
+    if (profissional && isEditModalOpen) {
+      setEditForm({
+        nome: profissional.nome || '',
+        telefone: profissional.telefone || '',
+        cidade: profissional.cidade || '',
+        preco_hora: profissional.preco_hora?.toString() || '',
+        especialidade: profissional.especialidade?.join(', ') || ''
+      })
+    }
+  }, [profissional, isEditModalOpen])
 
   useEffect(() => {
     if (profissional) {
@@ -134,7 +160,6 @@ export default function DashboardProfissional() {
     }
   }
 
-  // Função para abrir chat com cliente específico
   const handleOpenChat = (clientId: string, clientName: string, clientEmail: string) => {
     setChatClientId(clientId)
     setChatClientName(clientName)
@@ -172,6 +197,37 @@ export default function DashboardProfissional() {
       console.error(err)
     } finally {
       setLoading(false)
+    }
+  }
+
+  // ⭐ NOVO: Função para salvar perfil
+  async function handleSaveProfile(e: React.FormEvent) {
+    e.preventDefault()
+    if (!profissional?.id) return
+
+    setSavingProfile(true)
+    try {
+      const { error } = await supabase
+        .from('professionals')
+        .update({
+          nome: editForm.nome,
+          telefone: editForm.telefone,
+          cidade: editForm.cidade,
+          preco_hora: parseFloat(editForm.preco_hora) || 0,
+          especialidade: editForm.especialidade.split(',').map(s => s.trim()).filter(s => s)
+        })
+        .eq('id', profissional.id)
+
+      if (error) throw error
+
+      alert('✅ Perfil atualizado com sucesso!')
+      setIsEditModalOpen(false)
+      fetchProfissional() // Recarrega os dados
+    } catch (error) {
+      console.error('Erro ao salvar:', error)
+      alert('❌ Erro ao atualizar perfil')
+    } finally {
+      setSavingProfile(false)
     }
   }
 
@@ -500,7 +556,7 @@ export default function DashboardProfissional() {
                       </button>
                     </div>
 
-                    {/* ⭐ BOTÃO DE CONVERSAR COM CLIENTE - NOVO! */}
+                    {/* BOTÃO DE CONVERSAR COM CLIENTE */}
                     <div className="mt-3 pt-3 border-t border-gray-100">
                       <button
                         onClick={() => handleOpenChat(
@@ -568,13 +624,116 @@ export default function DashboardProfissional() {
               </div>
             </div>
 
-            <button className="w-full mt-6 px-4 py-3 border-2 border-purple-500 text-purple-600 rounded-xl font-medium hover:bg-purple-50 transition-colors flex items-center justify-center gap-2">
+            {/* ⭐ BOTÃO EDITAR PERFIL FUNCIONANDO */}
+            <button 
+              onClick={() => setIsEditModalOpen(true)}
+              className="w-full mt-6 px-4 py-3 border-2 border-purple-500 text-purple-600 rounded-xl font-medium hover:bg-purple-50 transition-colors flex items-center justify-center gap-2"
+            >
               <span>⚙️</span>
               Editar Perfil
             </button>
           </div>
         </div>
       </main>
+
+      {/* ⭐ MODAL DE EDIÇÃO DE PERFIL - NOVO! */}
+      {isEditModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-xl font-bold text-gray-800">Editar Perfil</h3>
+                <button 
+                  onClick={() => setIsEditModalOpen(false)}
+                  className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+                >
+                  <X className="w-5 h-5 text-gray-500" />
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveProfile} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Nome</label>
+                  <input
+                    type="text"
+                    value={editForm.nome}
+                    onChange={(e) => setEditForm({...editForm, nome: e.target.value})}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    placeholder="Seu nome"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Telefone</label>
+                  <input
+                    type="text"
+                    value={editForm.telefone}
+                    onChange={(e) => setEditForm({...editForm, telefone: e.target.value})}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    placeholder="(99) 99999-9999"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Cidade</label>
+                  <input
+                    type="text"
+                    value={editForm.cidade}
+                    onChange={(e) => setEditForm({...editForm, cidade: e.target.value})}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    placeholder="Sua cidade"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Preço/Hora (R$)</label>
+                  <input
+                    type="number"
+                    value={editForm.preco_hora}
+                    onChange={(e) => setEditForm({...editForm, preco_hora: e.target.value})}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    placeholder="80"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Especialidades</label>
+                  <input
+                    type="text"
+                    value={editForm.especialidade}
+                    onChange={(e) => setEditForm({...editForm, especialidade: e.target.value})}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    placeholder="Cabelo, Unhas, Maquiagem"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Separe por vírgulas</p>
+                </div>
+
+                <div className="flex gap-3 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setIsEditModalOpen(false)}
+                    className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={savingProfile}
+                    className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {savingProfile ? (
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <Save className="w-4 h-4" />
+                    )}
+                    Salvar
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal de Chat */}
       <ChatModal 
