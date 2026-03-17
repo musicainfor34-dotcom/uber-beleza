@@ -113,41 +113,52 @@ export default function ChatModal({
     }
   }, [initialClientId, conversations, loading, professionalId])
 
-  const fetchConversations = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('conversations')
-        .select(`
-          *,
-          client:client_id (
-            email,
-            raw_user_meta_data->>full_name as full_name
-          )
-        `)
-        .eq('professional_id', professionalId)
-        .order('updated_at', { ascending: false })
+ const fetchConversations = async () => {
+  try {
+    // Busca SEM join primeiro
+    const { data, error } = await supabase
+      .from('conversations')
+      .select('*')
+      .eq('professional_id', professionalId)
+      .order('updated_at', { ascending: false })
 
-      if (error) {
-        console.error('❌ Erro ao buscar conversas:', error)
-        setError('Erro ao carregar conversas')
-        return
-      }
-
-      if (data) {
-        console.log('📋 Conversas carregadas:', data.length)
-        const formatted = data.map((conv: any) => ({
-          ...conv,
-          client_name: conv.client?.full_name || conv.client?.email?.split('@')[0] || 'Cliente',
-          client_email: conv.client?.email
-        }))
-        setConversations(formatted)
-      }
-    } catch (err) {
-      console.error('❌ Erro:', err)
-    } finally {
-      setLoading(false)
+    if (error) {
+      console.error('❌ Erro ao buscar conversas:', error)
+      setError('Erro ao carregar conversas')
+      return
     }
+
+    if (data) {
+      console.log('📋 Conversas carregadas:', data.length)
+      
+      // Busca dados dos clientes na tabela professionals (se tiverem cadastro)
+      const clientIds = [...new Set(data.map(c => c.client_id))]
+      
+      const { data: profsData } = await supabase
+        .from('professionals')
+        .select('id, nome, email')
+        .in('id', clientIds)
+      
+      const profMap = (profsData || []).reduce((acc, p) => {
+        acc[p.id] = p
+        return acc
+      }, {} as any)
+
+      const formatted = data.map((conv: any) => ({
+        ...conv,
+        client_name: profMap[conv.client_id]?.nome || profMap[conv.client_id]?.email?.split('@')[0] || 'Cliente',
+        client_email: profMap[conv.client_id]?.email || ''
+      }))
+      
+      setConversations(formatted)
+    }
+  } catch (err) {
+    console.error('❌ Erro:', err)
+    setError('Erro ao carregar conversas')
+  } finally {
+    setLoading(false)
   }
+}
 
   const criarNovaConversa = async (clientId: string, clientName?: string, clientEmail?: string) => {
     try {
