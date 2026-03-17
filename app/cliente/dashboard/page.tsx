@@ -99,47 +99,54 @@ export default function ClienteDashboard() {
   }
 
   // NOVA FUNÇÃO: Carregar conversas do cliente
-  async function carregarConversas() {
-    if (!user?.id) return
-    
-    setLoadingConversas(true)
-    try {
-      const { data, error } = await supabase
-        .from('conversations')
-        .select(`
-          *,
-          professional:professional_id (
-            nome,
-            email
-          )
-        `)
-        .eq('client_id', user.id)
-        .order('updated_at', { ascending: false })
+async function carregarConversas() {
+  if (!user?.id) return
+  
+  setLoadingConversas(true)
+  try {
+    // Busca SEM join primeiro
+    const { data, error } = await supabase
+      .from('conversations')
+      .select('*')
+      .eq('client_id', user.id)
+      .order('updated_at', { ascending: false })
 
-      if (error) {
-        console.error('Erro ao buscar conversas:', error)
-        return
-      }
-
-      if (data) {
-        const conversasFormatadas = data.map((conv: any) => ({
-          id: conv.id,
-          professional_id: conv.professional_id,
-          professional_nome: conv.professional?.nome || conv.professional?.email?.split('@')[0] || 'Profissional',
-          professional_email: conv.professional?.email || '',
-          last_message: conv.last_message,
-          unread_client: conv.unread_client,
-          updated_at: conv.updated_at,
-          created_at: conv.created_at
-        }))
-        setConversas(conversasFormatadas)
-      }
-    } catch (error) {
-      console.error('Erro:', error)
-    } finally {
-      setLoadingConversas(false)
+    if (error) {
+      console.error('Erro detalhado:', error)
+      return
     }
+
+    if (data) {
+      // Busca dados dos profissionais separadamente
+      const profIds = data.map(c => c.professional_id)
+      const { data: profs } = await supabase
+        .from('professionals')
+        .select('id, nome, email')
+        .in('id', profIds)
+      
+      const profMap = (profs || []).reduce((acc, p) => {
+        acc[p.id] = p
+        return acc
+      }, {} as any)
+
+      const conversasFormatadas = data.map((conv: any) => ({
+        id: conv.id,
+        professional_id: conv.professional_id,
+        professional_nome: profMap[conv.professional_id]?.nome || profMap[conv.professional_id]?.email?.split('@')[0] || 'Profissional',
+        professional_email: profMap[conv.professional_id]?.email || '',
+        last_message: conv.last_message,
+        unread_client: conv.unread_client,
+        updated_at: conv.updated_at,
+        created_at: conv.created_at
+      }))
+      setConversas(conversasFormatadas)
+    }
+  } catch (error) {
+    console.error('Erro:', error)
+  } finally {
+    setLoadingConversas(false)
   }
+}
 
   // NOVA FUNÇÃO: Buscar mensagens da conversa
   async function buscarMensagens(conversationId: string) {
