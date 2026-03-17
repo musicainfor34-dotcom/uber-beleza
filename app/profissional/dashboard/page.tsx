@@ -61,12 +61,14 @@ export default function DashboardProfissional() {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   
+  // Estados do chat
   const [isChatOpen, setIsChatOpen] = useState(false)
   const [unreadCount, setUnreadCount] = useState(0)
   const [chatClientId, setChatClientId] = useState<string | null>(null)
   const [chatClientName, setChatClientName] = useState<string>('')
   const [chatClientEmail, setChatClientEmail] = useState<string>('')
 
+  // Estados para edição do perfil
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const [savingProfile, setSavingProfile] = useState(false)
   const [editForm, setEditForm] = useState({
@@ -87,6 +89,7 @@ export default function DashboardProfissional() {
     }
   }, [user])
 
+  // Preenche formulário quando abrir modal
   useEffect(() => {
     if (isEditModalOpen && profissional) {
       setEditForm({
@@ -112,7 +115,18 @@ export default function DashboardProfissional() {
         )
         .subscribe()
       
-      return () => { supabase.removeChannel(channel) }
+      const chatChannel = supabase
+        .channel(`chat:${profissional.id}`)
+        .on('postgres_changes',
+          { event: 'UPDATE', schema: 'public', table: 'conversations', filter: `professional_id=eq.${profissional.id}` },
+          () => fetchUnreadCount()
+        )
+        .subscribe()
+
+      return () => {
+        supabase.removeChannel(channel)
+        supabase.removeChannel(chatChannel)
+      }
     }
   }, [profissional])
 
@@ -191,18 +205,17 @@ export default function DashboardProfissional() {
         const agendamentosCompletos = await Promise.all(
           data.map(async (ag: any) => {
             const { data: clienteData } = await supabase
-              .from('professionals')
-              .select('nome, email')
-              .eq('user_id', ag.cliente_id)
+              .from('auth.users') // ou a tabela correta de usuários/clientes
+              .select('email, raw_user_meta_data')
+              .eq('id', ag.cliente_id)
               .single()
             
-            // Ajustando o objeto para bater com a Interface (colocando o nome dentro de user_metadata)
             return { 
-                ...ag, 
-                cliente: {
-                    email: clienteData?.email || 'Sem email',
-                    user_metadata: { nome: clienteData?.nome || 'Cliente' }
-                }
+              ...ag, 
+              cliente: {
+                email: clienteData?.email || 'Sem email',
+                user_metadata: clienteData?.raw_user_meta_data || { nome: 'Cliente' }
+              }
             }
           })
         )
@@ -255,35 +268,48 @@ export default function DashboardProfissional() {
             <button onClick={fetchAgendamentos} className="p-2 border rounded-lg hover:bg-white"><RefreshCw className={refreshing ? 'animate-spin' : ''} /></button>
           </div>
           
-          {agendamentos.map((ag) => (
-            <div key={ag.id} className="bg-white p-4 rounded-xl border shadow-sm">
-              <div className="flex justify-between items-start">
-                <div>
-                  <h3 className="font-bold">{ag.servico?.nome}</h3>
-                  <span className={`text-xs px-2 py-1 rounded-full border ${getStatusColor(ag.status)}`}>{ag.status}</span>
-                  {/* CORREÇÃO AQUI: Acessando via user_metadata para não dar erro no build */}
-                  <p className="text-sm text-gray-600 mt-1">
-                    Cliente: {ag.cliente?.user_metadata?.nome || ag.cliente?.email}
-                  </p>
-                </div>
-                <p className="font-bold text-purple-600">R$ {ag.valor_total?.toFixed(2)}</p>
-              </div>
-              <div className="mt-3 flex flex-wrap gap-4 text-sm text-gray-500">
-                <div className="flex items-center gap-1"><Calendar className="w-4 h-4" /> {new Date(ag.data_agendamento).toLocaleDateString()}</div>
-                <div className="flex items-center gap-1"><Clock className="w-4 h-4" /> {ag.hora_inicio}</div>
-              </div>
-              <div className="mt-4 flex gap-2">
-                <button 
-                    onClick={() => handleOpenChat(ag.cliente_id, ag.cliente?.user_metadata?.nome || 'Cliente', ag.cliente?.email)} 
-                    className="flex-1 py-2 bg-purple-50 text-purple-700 rounded-lg text-sm font-medium"
-                >
-                    Chat
-                </button>
-                {ag.status === 'pendente' && <button onClick={() => atualizarStatus(ag.id, 'confirmado')} className="flex-1 py-2 bg-green-500 text-white rounded-lg text-sm">Confirmar</button>}
-                <button onClick={() => deletarAgendamento(ag.id)} className="p-2 text-red-500"><Trash2 className="w-5 h-5" /></button>
-              </div>
+          {agendamentos.length === 0 ? (
+            <div className="bg-white rounded-xl p-8 text-center border border-gray-100 shadow-sm">
+              <Bell className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+              <p className="text-gray-500">Nenhum agendamento ainda</p>
+              <p className="text-sm text-gray-400 mt-1">Quando clientes agendarem, aparecerão aqui automaticamente</p>
             </div>
-          ))}
+          ) : (
+            agendamentos.map((ag) => (
+              <div key={ag.id} className="bg-white p-4 rounded-xl border shadow-sm">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h3 className="font-bold">{ag.servico?.nome}</h3>
+                    <span className={`text-xs px-2 py-1 rounded-full border ${getStatusColor(ag.status)}`}>{ag.status}</span>
+                    <p className="text-sm text-gray-600 mt-1">Cliente: {ag.cliente?.user_metadata?.nome || ag.cliente?.email}</p>
+                  </div>
+                  <p className="font-bold text-purple-600">R$ {ag.valor_total?.toFixed(2)}</p>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-4 text-sm text-gray-500">
+                  <div className="flex items-center gap-1"><Calendar className="w-4 h-4" /> {new Date(ag.data_agendamento).toLocaleDateString()}</div>
+                  <div className="flex items-center gap-1"><Clock className="w-4 h-4" /> {ag.hora_inicio}</div>
+                </div>
+                <div className="mt-4 flex gap-2">
+                  <button 
+                    onClick={() => handleOpenChat(ag.cliente_id, ag.cliente?.user_metadata?.nome || 'Cliente', ag.cliente?.email)} 
+                    className="flex-1 py-2 bg-purple-50 text-purple-700 rounded-lg text-sm font-medium flex items-center justify-center gap-2"
+                  >
+                    <MessageCircle className="w-4 h-4" /> Conversar
+                  </button>
+                  {ag.status === 'pendente' && (
+                    <>
+                      <button onClick={() => atualizarStatus(ag.id, 'confirmado')} className="flex-1 py-2 bg-green-500 text-white rounded-lg text-sm">Confirmar</button>
+                      <button onClick={() => atualizarStatus(ag.id, 'cancelado')} className="flex-1 py-2 bg-red-500 text-white rounded-lg text-sm">Cancelar</button>
+                    </>
+                  )}
+                  {ag.status === 'confirmado' && (
+                    <button onClick={() => atualizarStatus(ag.id, 'concluido')} className="flex-1 py-2 bg-blue-500 text-white rounded-lg text-sm">Concluir</button>
+                  )}
+                  <button onClick={() => deletarAgendamento(ag.id)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg"><Trash2 className="w-5 h-5" /></button>
+                </div>
+              </div>
+            ))
+          )}
         </div>
 
         <div className="bg-white p-6 rounded-xl border shadow-sm h-fit">
@@ -294,77 +320,64 @@ export default function DashboardProfissional() {
             <h3 className="font-bold text-lg">{profissional?.nome}</h3>
             <p className="text-sm text-gray-500">{profissional?.cidade}</p>
           </div>
+          
+          <div className="space-y-3 mb-6 text-sm">
+            <div className="flex justify-between py-2 border-b">
+              <span className="text-gray-600 flex items-center gap-2"><Phone className="w-4 h-4" /> Telefone</span>
+              <span>{profissional?.telefone || '-'}</span>
+            </div>
+            <div className="flex justify-between py-2 border-b">
+              <span className="text-gray-600 flex items-center gap-2"><DollarSign className="w-4 h-4" /> Preço/Hora</span>
+              <span className="font-bold text-purple-600">R$ {profissional?.preco_hora}</span>
+            </div>
+            <div className="flex justify-between py-2 border-b">
+              <span className="text-gray-600 flex items-center gap-2"><Scissors className="w-4 h-4" /> Especialidade</span>
+              <span>{profissional?.especialidade?.join(', ')}</span>
+            </div>
+          </div>
+
           <button 
             onClick={() => setIsEditModalOpen(true)}
-            className="w-full py-3 border-2 border-purple-500 text-purple-600 rounded-xl font-bold hover:bg-purple-50"
+            className="w-full py-3 border-2 border-purple-500 text-purple-600 rounded-xl font-bold hover:bg-purple-50 transition-colors"
           >
             Editar Perfil
           </button>
         </div>
       </main>
 
+      {/* Modal de Edição */}
       {isEditModalOpen && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-xl font-bold">Editar Perfil</h3>
-              <button onClick={() => setIsEditModalOpen(false)}><X /></button>
+              <button onClick={() => setIsEditModalOpen(false)}><X className="w-6 h-6" /></button>
             </div>
 
             <form onSubmit={handleSaveProfile} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Nome</label>
-                <input
-                  type="text"
-                  required
-                  value={editForm.nome}
-                  onChange={(e) => setEditForm({...editForm, nome: e.target.value})}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg text-gray-900 bg-white focus:ring-2 focus:ring-purple-500 outline-none"
-                />
+                <label className="block text-sm font-medium mb-1">Nome</label>
+                <input type="text" required value={editForm.nome} onChange={(e) => setEditForm({...editForm, nome: e.target.value})} className="w-full px-4 py-2 border rounded-lg" />
               </div>
-
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Telefone</label>
-                <input
-                  type="text"
-                  value={editForm.telefone}
-                  onChange={(e) => setEditForm({...editForm, telefone: e.target.value})}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg text-gray-900 bg-white focus:ring-2 focus:ring-purple-500 outline-none"
-                />
+                <label className="block text-sm font-medium mb-1">Telefone</label>
+                <input type="text" value={editForm.telefone} onChange={(e) => setEditForm({...editForm, telefone: e.target.value})} className="w-full px-4 py-2 border rounded-lg" />
               </div>
-
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Cidade</label>
-                <input
-                  type="text"
-                  value={editForm.cidade}
-                  onChange={(e) => setEditForm({...editForm, cidade: e.target.value})}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg text-gray-900 bg-white focus:ring-2 focus:ring-purple-500 outline-none"
-                />
+                <label className="block text-sm font-medium mb-1">Cidade</label>
+                <input type="text" value={editForm.cidade} onChange={(e) => setEditForm({...editForm, cidade: e.target.value})} className="w-full px-4 py-2 border rounded-lg" />
               </div>
-
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Preço/Hora (R$)</label>
-                <input
-                  type="number"
-                  value={editForm.preco_hora}
-                  onChange={(e) => setEditForm({...editForm, preco_hora: e.target.value})}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg text-gray-900 bg-white focus:ring-2 focus:ring-purple-500 outline-none"
-                />
+                <label className="block text-sm font-medium mb-1">Preço/Hora (R$)</label>
+                <input type="number" value={editForm.preco_hora} onChange={(e) => setEditForm({...editForm, preco_hora: e.target.value})} className="w-full px-4 py-2 border rounded-lg" />
               </div>
-
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Especialidades (separadas por vírgula)</label>
-                <input
-                  type="text"
-                  value={editForm.especialidade}
-                  onChange={(e) => setEditForm({...editForm, especialidade: e.target.value})}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg text-gray-900 bg-white focus:ring-2 focus:ring-purple-500 outline-none"
-                />
+                <label className="block text-sm font-medium mb-1">Especialidades (separadas por vírgula)</label>
+                <input type="text" value={editForm.especialidade} onChange={(e) => setEditForm({...editForm, especialidade: e.target.value})} className="w-full px-4 py-2 border rounded-lg" />
               </div>
 
               <div className="flex gap-3 pt-4">
-                <button type="button" onClick={() => setIsEditModalOpen(false)} className="flex-1 py-2 border rounded-lg">Cancelar</button>
+                <button type="button" onClick={() => setIsEditModalOpen(false)} className="flex-1 py-2 border rounded-lg hover:bg-gray-50">Cancelar</button>
                 <button type="submit" disabled={savingProfile} className="flex-1 py-2 bg-purple-600 text-white rounded-lg font-bold flex justify-center items-center gap-2">
                   {savingProfile ? 'Salvando...' : <><Save className="w-4 h-4" /> Salvar</>}
                 </button>
@@ -374,6 +387,7 @@ export default function DashboardProfissional() {
         </div>
       )}
 
+      {/* Modal de Chat */}
       <ChatModal 
         isOpen={isChatOpen}
         onClose={() => { setIsChatOpen(false); fetchUnreadCount() }}
