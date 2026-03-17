@@ -159,6 +159,31 @@ export default function ChatModal({
     setLoading(false)
   }
 }
+  
+
+  
+  useEffect(() => {
+    if (!professionalId || !isOpen) return
+
+    const subscription = supabase
+      .channel(`conversations-prof-${professionalId}`)
+      .on('postgres_changes',
+        { 
+          event: '*', 
+          schema: 'public', 
+          table: 'conversations',
+          filter: `professional_id=eq.${professionalId}`
+        },
+        () => {
+          fetchConversations() // Atualiza lista automaticamente
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(subscription)
+    }
+  }, [professionalId, isOpen])
 
   const criarNovaConversa = async (clientId: string, clientName?: string, clientEmail?: string) => {
     try {
