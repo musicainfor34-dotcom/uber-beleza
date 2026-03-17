@@ -68,7 +68,7 @@ export default function DashboardProfissional() {
   const [chatClientName, setChatClientName] = useState<string>('')
   const [chatClientEmail, setChatClientEmail] = useState<string>('')
 
-  // ⭐ NOVO: Estados para edição do perfil
+  // ⭐ Estados para edição do perfil
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const [savingProfile, setSavingProfile] = useState(false)
   const [editForm, setEditForm] = useState({
@@ -88,19 +88,6 @@ export default function DashboardProfissional() {
       fetchProfissional()
     }
   }, [user])
-
-  // ⭐ NOVO: Quando abrir modal, preenche com dados atuais
-  useEffect(() => {
-    if (profissional && isEditModalOpen) {
-      setEditForm({
-        nome: profissional.nome || '',
-        telefone: profissional.telefone || '',
-        cidade: profissional.cidade || '',
-        preco_hora: profissional.preco_hora?.toString() || '',
-        especialidade: profissional.especialidade?.join(', ') || ''
-      })
-    }
-  }, [profissional, isEditModalOpen])
 
   useEffect(() => {
     if (profissional) {
@@ -200,7 +187,19 @@ export default function DashboardProfissional() {
     }
   }
 
-  // ⭐ NOVO: Função para salvar perfil
+  // ⭐ Função para abrir modal com dados preenchidos
+  const handleOpenEditModal = () => {
+    setEditForm({
+      nome: profissional?.nome || '',
+      telefone: profissional?.telefone || '',
+      cidade: profissional?.cidade || '',
+      preco_hora: profissional?.preco_hora?.toString() || '',
+      especialidade: profissional?.especialidade?.join(', ') || ''
+    })
+    setIsEditModalOpen(true)
+  }
+
+  // ⭐ Função para salvar perfil
   async function handleSaveProfile(e: React.FormEvent) {
     e.preventDefault()
     if (!profissional?.id) return
@@ -624,9 +623,9 @@ export default function DashboardProfissional() {
               </div>
             </div>
 
-            {/* ⭐ BOTÃO EDITAR PERFIL FUNCIONANDO */}
+            {/* ⭐ BOTÃO EDITAR PERFIL CORRIGIDO */}
             <button 
-              onClick={() => setIsEditModalOpen(true)}
+              onClick={handleOpenEditModal}
               className="w-full mt-6 px-4 py-3 border-2 border-purple-500 text-purple-600 rounded-xl font-medium hover:bg-purple-50 transition-colors flex items-center justify-center gap-2"
             >
               <span>⚙️</span>
@@ -636,7 +635,7 @@ export default function DashboardProfissional() {
         </div>
       </main>
 
-      {/* ⭐ MODAL DE EDIÇÃO DE PERFIL - NOVO! */}
+      {/* ⭐ MODAL DE EDIÇÃO DE PERFIL */}
       {isEditModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
