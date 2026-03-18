@@ -195,11 +195,11 @@ export default function ClienteDashboard() {
         hora_inicio: horaAgendamento,
         hora_fim: horaFim,
         endereco: enderecoAgendamento,
-        bairro: 'Centro', // Campo obrigatório no seu banco
-        cidade: profissionalAgendar.cidade || 'Porto Velho', // Campo obrigatório no seu banco
+        bairro: 'Centro',
+        cidade: profissionalAgendar.cidade || 'Porto Velho',
         status: 'pendente',
-        valor_total: profissionalAgendar.preco_hora || 80,
-        servico_id: 'servico-padrao' // Provavelmente sua tabela exige isso
+        valor_total: profissionalAgendar.preco_hora || 80
+        // REMOVIDO: servico_id: 'servico-padrao' - estava causando erro de UUID
       })
 
       if (error) {
@@ -321,7 +321,7 @@ export default function ClienteDashboard() {
         </main>
       </div>
 
-      {/* MODAL AGENDAMENTO - FIX COR DO TEXTO */}
+      {/* MODAL AGENDAMENTO */}
       {modalAgendamento && profissionalAgendar && (
         <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/50 p-0 md:p-4 backdrop-blur-sm">
           <div className="bg-white w-full max-w-md rounded-t-3xl md:rounded-2xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom duration-300">
@@ -371,7 +371,7 @@ export default function ClienteDashboard() {
         </div>
       )}
 
-      {/* MODAL CHAT - Responsivo */}
+      {/* MODAL CHAT */}
       {chatAberto && conversaSelecionada && (
         <div className="fixed inset-0 z-50 flex flex-col bg-white md:inset-auto md:right-4 md:bottom-4 md:w-96 md:h-[500px] md:rounded-2xl md:shadow-2xl overflow-hidden">
           <div className="bg-purple-600 p-4 text-white flex justify-between items-center">
