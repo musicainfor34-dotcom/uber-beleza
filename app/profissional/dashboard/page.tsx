@@ -286,7 +286,9 @@ export default function DashboardProfissional() {
                   <p className="font-bold text-purple-600">R$ {ag.valor_total?.toFixed(2)}</p>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-4 text-sm text-gray-500">
-                  <div className="flex items-center gap-1"><Calendar className="w-4 h-4" /> {new Date(ag.data_agendamento).toLocaleDateString()}</div>
+                  <div className="flex items-center gap-1"><Calendar className="w-4 h-4" />
+                   {new Date(ag.data_agendamento + 'T12:00:00').toLocaleDateString('pt-BR')}
+                                    </div>
                   <div className="flex items-center gap-1"><Clock className="w-4 h-4" /> {ag.hora_inicio}</div>
                 </div>
                 <div className="mt-4 flex gap-2">
