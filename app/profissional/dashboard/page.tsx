@@ -236,6 +236,64 @@ export default function DashboardProfissional() {
     }
   }, [profissional])
 
+// Efeito para enviar localização em tempo real (só quando tem agendamento confirmado)
+useEffect(() => {
+  // Verifica se tem agendamento confirmado ativo
+  const agendamentoAtivo = agendamentos.find(ag => ag.status === 'confirmado')
+  
+  if (!agendamentoAtivo || !profissional) return
+  
+  console.log('📍 Iniciando rastreamento GPS para agendamento:', agendamentoAtivo.id)
+  
+  // Função para enviar localização
+  const enviarLocalizacao = async () => {
+    try {
+      // Pega posição atual do GPS
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          const { latitude, longitude } = position.coords
+          
+          console.log('📍 Enviando localização:', latitude, longitude)
+          
+          // Upsert (insere ou atualiza) no Supabase
+          const { error } = await supabase
+            .from('localizacao_profissional')
+            .upsert({
+              profissional_id: profissional.id,
+              agendamento_id: agendamentoAtivo.id,
+              latitude,
+              longitude,
+              updated_at: new Date().toISOString()
+            }, {
+              onConflict: 'profissional_id'
+            })
+          
+          if (error) console.error('Erro ao enviar localização:', error)
+        },
+        (error) => {
+          console.error('Erro GPS:', error.message)
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      )
+    } catch (e) {
+      console.error('Erro:', e)
+    }
+  }
+  
+  // Envia imediatamente
+  enviarLocalizacao()
+  
+  // Repete a cada 10 segundos
+  const interval = setInterval(enviarLocalizacao, 10000)
+  
+  return () => {
+    clearInterval(interval)
+    console.log('🛑 Parando rastreamento GPS')
+  }
+}, [agendamentos, profissional])
+
+
+
   async function fetchUnreadCount() {
     if (!profissional?.id) return
     const { count } = await supabase
