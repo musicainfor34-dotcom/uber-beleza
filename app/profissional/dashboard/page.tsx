@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@supabase/supabase-js'
 import { 
@@ -23,6 +23,44 @@ import {
   Save
 } from 'lucide-react'
 import ChatModal from './ChatModal'
+
+// Função para tocar som de notificação (beep)
+const playNotificationSound = () => {
+  try {
+    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
+    const oscillator = audioContext.createOscillator()
+    const gainNode = audioContext.createGain()
+    
+    oscillator.connect(gainNode)
+    gainNode.connect(audioContext.destination)
+    
+    oscillator.frequency.value = 800 // Frequência do beep
+    oscillator.type = 'sine'
+    
+    gainNode.gain.setValueAtTime(0.3, audioContext.currentTime)
+    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5)
+    
+    oscillator.start(audioContext.currentTime)
+    oscillator.stop(audioContext.currentTime + 0.5)
+    
+    // Toca um segundo beep após 200ms (efeito de alerta duplo)
+    setTimeout(() => {
+      const osc2 = audioContext.createOscillator()
+      const gain2 = audioContext.createGain()
+      osc2.connect(gain2)
+      gain2.connect(audioContext.destination)
+      osc2.frequency.value = 1000
+      osc2.type = 'sine'
+      gain2.gain.setValueAtTime(0.3, audioContext.currentTime)
+      gain2.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5)
+      osc2.start(audioContext.currentTime)
+      osc2.stop(audioContext.currentTime + 0.5)
+    }, 200)
+  } catch (e) {
+    console.error('Erro ao tocar som:', e)
+  }
+}
+
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -71,6 +109,16 @@ export default function DashboardProfissional() {
   // Estados para edição do perfil
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const [savingProfile, setSavingProfile] = useState(false)
+  // Estado para controle do alerta sonoro
+  const [alertaInterval, setAlertaInterval] = useState<NodeJS.Timeout | null>(null)
+  const agendamentosPendentesRef = useRef<Agendamento[]>([])
+  
+  // Atualiza a ref quando agendamentos mudam
+  useEffect(() => {
+    agendamentosPendentesRef.current = agendamentos.filter(ag => ag.status === 'pendente')
+  }, [agendamentos])
+
+
   const [editForm, setEditForm] = useState({
     nome: '',
     telefone: '',
