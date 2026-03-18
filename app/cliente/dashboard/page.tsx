@@ -1,23 +1,29 @@
-
-
-
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@supabase/supabase-js'
 import { 
+  Calendar, 
+  Clock, 
+  LogOut, 
+  User, 
   Scissors, 
-  Paintbrush,
   Sparkles,
-  Gem,
   Star,
   MapPin,
-  LogOut,
+  MessageCircle,
+  Search,
   ArrowRight,
+  Paintbrush,
+  Gem,
   ChevronRight,
-  Clock,
-  Loader2
+  Clock3,
+  Send,
+  X,
+  ArrowLeft,
+  Phone,
+  CalendarDays
 } from 'lucide-react'
 
 const supabase = createClient(
@@ -25,23 +31,57 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
+// Interfaces
+interface Agendamento {
+  id: string
+  profissional_id: string
+  profissional_nome: string
+  profissional_foto: string
+  profissional_telefone: string
+  servico: string
+  data: string
+  horario: string
+  status: 'pendente' | 'confirmado' | 'concluido' | 'cancelado'
+  endereco?: string
+  preco: number
+}
+
+interface Mensagem {
+  id: string
+  agendamento_id: string
+  remetente: 'cliente' | 'profissional'
+  texto: string
+  created_at: string
+  lida: boolean
+}
+
 export default function ClienteDashboard() {
   const router = useRouter()
   const [user, setUser] = useState<any>(null)
   const [loading, setLoading] = useState(true)
-  const [servicoSelecionado, setServicoSelecionado] = useState<string | null>(null)
-  const [profissionais, setProfissionais] = useState<any[]>([])
-  const [loadingProfissionais, setLoadingProfissionais] = useState(false)
+  const [abaAtiva, setAbaAtiva] = useState<'agendamentos' | 'novo' | 'perfil'>('agendamentos')
+  
+  // Estados do Chat
+  const [chatAberto, setChatAberto] = useState(false)
+  const [agendamentoChat, setAgendamentoChat] = useState<Agendamento | null>(null)
+  const [mensagens, setMensagens] = useState<Mensagem[]>([])
+  const [novaMensagem, setNovaMensagem] = useState('')
+  const [agendamentos, setAgendamentos] = useState<Agendamento[]>([])
+  const messagesEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     checkUser()
   }, [])
 
   useEffect(() => {
-    if (servicoSelecionado) {
-      buscarProfissionais(servicoSelecionado)
+    if (user) {
+      carregarAgendamentos()
     }
-  }, [servicoSelecionado])
+  }, [user])
+
+  useEffect(() => {
+    scrollToBottom()
+  }, [mensagens])
 
   async function checkUser() {
     const { data: { session } } = await supabase.auth.getSession()
@@ -53,32 +93,67 @@ export default function ClienteDashboard() {
     setLoading(false)
   }
 
-  async function buscarProfissionais(especialidade: string) {
-    setLoadingProfissionais(true)
-    try {
-      // Buscar profissionais do Supabase filtrando por especialidade
-      const { data, error } = await supabase
-        .from('professionals')
-        .select('*')
-        .eq('ativo', true)
-        .order('created_at', { ascending: false })
+  async function carregarAgendamentos() {
+    // Mock por enquanto - depois conecta com a tabela real
+    setAgendamentos([
+      {
+        id: '1',
+        profissional_id: 'uuid-1',
+        profissional_nome: 'Sandra Lima',
+        profissional_foto: 'https://images.unsplash.com/photo-1594744803329-e58b31de8bf5?w=200&h=200&fit=crop',
+        profissional_telefone: '(11) 98765-4321',
+        servico: 'Coloração e Corte',
+        data: 'Sex, 18 Mar',
+        horario: '14:00',
+        status: 'confirmado',
+        endereco: 'Av. Paulista, 1000 - São Paulo',
+        preco: 150
+      },
+      {
+        id: '2',
+        profissional_id: 'uuid-2',
+        profissional_nome: 'Helena Costa',
+        profissional_foto: 'https://images.unsplash.com/photo-1580618672591-eb180b1a973f?w=200&h=200&fit=crop',
+        profissional_telefone: '(11) 91234-5678',
+        servico: 'Maquiagem Social',
+        data: 'Sáb, 19 Mar',
+        horario: '10:00',
+        status: 'pendente',
+        preco: 120
+      }
+    ])
+  }
 
-      if (error) throw error
+  async function abrirChat(agendamento: Agendamento) {
+    setAgendamentoChat(agendamento)
+    setChatAberto(true)
+    // Carregar mensagens do Supabase aqui depois
+    setMensagens([])
+  }
 
-      // Filtrar por especialidade (como é um array, filtramos no JS)
-      const filtrados = (data || []).filter((prof: any) => {
-        const especs = prof.especialidade || []
-        return especs.some((esp: string) => 
-          esp.toLowerCase() === especialidade.toLowerCase()
-        )
-      })
+  async function enviarMensagem() {
+    if (!novaMensagem.trim() || !agendamentoChat) return
 
-      setProfissionais(filtrados)
-    } catch (error) {
-      console.error('Erro ao buscar profissionais:', error)
-    } finally {
-      setLoadingProfissionais(false)
+    // Criar mensagem temporária para exibição imediata (TIPADA corretamente)
+    const mensagemTemp: Mensagem = {
+      id: Date.now().toString(),
+      agendamento_id: agendamentoChat.id,
+      remetente: 'cliente', // Agora é literal 'cliente', não string genérica
+      texto: novaMensagem,
+      created_at: new Date().toISOString(),
+      lida: true
     }
+
+    // Salvar no Supabase (aqui você implementa depois)
+    // await supabase.from('mensagens').insert({...})
+
+    setMensagens(prev => [...prev, mensagemTemp])
+    setNovaMensagem('')
+    scrollToBottom()
+  }
+
+  function scrollToBottom() {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }
 
   async function handleLogout() {
@@ -86,319 +161,314 @@ export default function ClienteDashboard() {
     router.push('/login')
   }
 
-  const servicos = [
-    {
-      id: 'Cabelo',
-      nome: 'Cabelo',
-      descricao: 'Corte, coloração, hidratação',
-      cor: 'from-yellow-400 to-orange-500',
-      bgIcon: 'bg-yellow-400',
-      textColor: 'text-yellow-400',
-      icon: Scissors,
-      preco: 'R$ 50'
-    },
-    {
-      id: 'Maquiagem',
-      nome: 'Maquiagem',
-      descricao: 'Social, festa e noiva',
-      cor: 'from-pink-400 to-rose-500',
-      bgIcon: 'bg-pink-400',
-      textColor: 'text-pink-400',
-      icon: Paintbrush,
-      preco: 'R$ 120'
-    },
-    {
-      id: 'Manicure',
-      nome: 'Manicure',
-      descricao: 'Esmaltação e nail art',
-      cor: 'from-red-400 to-pink-500',
-      bgIcon: 'bg-red-400',
-      textColor: 'text-red-400',
-      icon: Sparkles,
-      preco: 'R$ 35'
-    },
-    {
-      id: 'Pedicure',
-      nome: 'Pedicure',
-      descricao: 'Spa dos pés e cuidados',
-      cor: 'from-purple-400 to-violet-500',
-      bgIcon: 'bg-purple-400',
-      textColor: 'text-purple-400',
-      icon: Gem,
-      preco: 'R$ 40'
-    }
-  ]
-
-  const servicoAtual = servicos.find(s => s.id === servicoSelecionado)
-
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-900 md:bg-gray-50 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-yellow-400 md:border-pink-500"></div>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-pink-500"></div>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-slate-900 md:bg-gray-50">
-      {/* ===== MOBILE LAYOUT (< md) ===== */}
-      <div className="md:hidden flex flex-col min-h-screen pb-20">
-        <header className="p-6 flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-white">Serviços</h1>
-            <p className="text-slate-400 text-sm">Escolha uma categoria</p>
-          </div>
-          <div className="flex items-center gap-3">
-            <button onClick={handleLogout} className="p-2 text-slate-400 hover:text-white">
-              <LogOut className="w-5 h-5" />
-            </button>
-            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center">
-              <span className="text-slate-900 font-bold text-sm">
-                {user?.email?.charAt(0).toUpperCase()}
-              </span>
+    <div className="min-h-screen bg-gray-50 pb-24">
+      {/* Header */}
+      <header className="sticky top-0 z-40 bg-white shadow-sm border-b border-gray-100">
+        <div className="max-w-3xl mx-auto px-4 py-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-800">
+                {abaAtiva === 'agendamentos' ? 'Meus Agendamentos' : 'Novo Agendamento'}
+              </h1>
+              <p className="text-sm text-gray-500">
+                {abaAtiva === 'agendamentos' 
+                  ? 'Gerencie seus horários marcados' 
+                  : 'Escolha um serviço'}
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <button 
+                onClick={handleLogout}
+                className="p-2 text-gray-400 hover:text-red-500"
+              >
+                <LogOut className="w-5 h-5" />
+              </button>
+              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-pink-400 to-purple-600 flex items-center justify-center">
+                <span className="text-white font-bold text-sm">
+                  {user?.email?.charAt(0).toUpperCase()}
+                </span>
+              </div>
             </div>
           </div>
-        </header>
+        </div>
+      </header>
 
-        {!servicoSelecionado ? (
-          <main className="flex-1 px-4 py-2">
-            <div className="grid grid-cols-2 gap-4">
-              {servicos.map((servico) => (
-                <button
-                  key={servico.id}
-                  onClick={() => setServicoSelecionado(servico.id)}
-                  className="aspect-square bg-slate-800 rounded-2xl p-4 flex flex-col items-center justify-center gap-3 active:scale-95 transition-transform border border-slate-700 hover:border-slate-600"
-                >
-                  <div className={`w-16 h-16 rounded-2xl ${servico.bgIcon} bg-opacity-20 flex items-center justify-center`}>
-                    <servico.icon className={`w-8 h-8 ${servico.textColor}`} />
-                  </div>
-                  <div className="text-center">
-                    <h3 className="text-white font-bold text-lg">{servico.nome}</h3>
-                    <p className="text-slate-400 text-xs mt-1">Ver profissionais</p>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </main>
-        ) : (
-          <main className="flex-1 px-4 py-2">
-            <button 
-              onClick={() => setServicoSelecionado(null)}
-              className="flex items-center gap-2 text-slate-400 hover:text-white mb-4"
-            >
-              <ArrowRight className="w-5 h-5 rotate-180" />
-              <span>Voltar</span>
-            </button>
-
-            {servicoAtual && (
-              <div className="bg-slate-800 rounded-2xl p-4 mb-6 border border-slate-700">
-                <div className="flex items-center gap-4">
-                  <div className={`w-14 h-14 rounded-xl ${servicoAtual.bgIcon} bg-opacity-20 flex items-center justify-center`}>
-                    <servicoAtual.icon className={`w-7 h-7 ${servicoAtual.textColor}`} />
-                  </div>
-                  <div>
-                    <h2 className="text-xl font-bold text-white">{servicoAtual.nome}</h2>
-                    <p className="text-slate-400 text-sm">
-                      {loadingProfissionais ? 'Carregando...' : `${profissionais.length} profissionais`}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {loadingProfissionais ? (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 className="w-8 h-8 text-yellow-400 animate-spin" />
-              </div>
-            ) : profissionais.length === 0 ? (
-              <div className="text-center py-12 text-slate-400">
-                <p>Nenhum profissional disponível para esta categoria.</p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {profissionais.map((prof) => (
-                  <div 
-                    key={prof.id}
-                    onClick={() => router.push(`/profissional/${prof.id}`)}
-                    className="bg-slate-800 rounded-2xl p-4 border border-slate-700 active:scale-95 transition-transform"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="relative">
-                        <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-pink-400 to-purple-600 flex items-center justify-center text-white font-bold text-xl">
-                          {prof.nome?.charAt(0).toUpperCase() || 'P'}
-                        </div>
-                        {prof.ativo && (
-                          <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-green-500 border-2 border-slate-800 rounded-full"></div>
-                        )}
-                      </div>
-                      <div className="flex-1">
-                        <h4 className="font-bold text-white">{prof.nome}</h4>
-                        <div className="flex items-center gap-1 text-sm text-slate-400">
-                          <Star className="w-3 h-3 text-yellow-400 fill-current" />
-                          <span>{prof.avaliacao || 5.0}</span>
-                          <span className="text-xs">({prof.cidade || 'Sem cidade'})</span>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <span className="block text-lg font-bold text-white">
-                          R$ {prof.preco_hora || '0'}
-                        </span>
-                        <button className="mt-1 px-3 py-1 bg-gradient-to-r from-yellow-400 to-orange-500 text-slate-900 text-xs font-bold rounded-lg">
-                          Agendar
-                        </button>
-                      </div>
+      <main className="max-w-3xl mx-auto px-4 py-6">
+        {/* ABA: MEUS AGENDAMENTOS */}
+        {abaAtiva === 'agendamentos' && (
+          <div className="space-y-4">
+            {agendamentos.map((agend) => (
+              <div key={agend.id} className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+                {/* Header do Card */}
+                <div className="flex items-start justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <img 
+                      src={agend.profissional_foto} 
+                      alt={agend.profissional_nome}
+                      className="w-14 h-14 rounded-2xl object-cover"
+                    />
+                    <div>
+                      <h3 className="font-bold text-gray-800 text-lg">{agend.profissional_nome}</h3>
+                      <p className="text-pink-600 text-sm font-medium">{agend.servico}</p>
                     </div>
                   </div>
-                ))}
+                  <div className={`px-3 py-1 rounded-full text-xs font-bold ${
+                    agend.status === 'confirmado' 
+                      ? 'bg-green-100 text-green-700' 
+                      : agend.status === 'pendente'
+                      ? 'bg-yellow-100 text-yellow-700'
+                      : 'bg-gray-100 text-gray-700'
+                  }`}>
+                    {agend.status === 'confirmado' ? 'Confirmado' : 'Pendente'}
+                  </div>
+                </div>
+
+                {/* Detalhes */}
+                <div className="flex items-center gap-4 text-sm text-gray-600 mb-4 bg-gray-50 p-3 rounded-xl">
+                  <div className="flex items-center gap-2">
+                    <CalendarDays className="w-4 h-4 text-pink-500" />
+                    <span className="font-medium">{agend.data}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-pink-500" />
+                    <span className="font-medium">{agend.horario}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <MapPin className="w-4 h-4 text-pink-500" />
+                    <span className="truncate">{agend.endereco || 'A definir'}</span>
+                  </div>
+                </div>
+
+                {/* Ações */}
+                <div className="flex gap-3">
+                  <button 
+                    onClick={() => abrirChat(agend)}
+                    className="flex-1 flex items-center justify-center gap-2 py-3 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl font-semibold shadow-md hover:shadow-lg transition active:scale-95"
+                  >
+                    <MessageCircle className="w-5 h-5" />
+                    Conversar
+                  </button>
+                  
+                  <button 
+                    onClick={() => window.open(`https://wa.me/55${agend.profissional_telefone.replace(/\D/g, '')}`, '_blank')}
+                    className="flex items-center justify-center gap-2 px-4 py-3 bg-green-500 text-white rounded-xl font-semibold shadow-md hover:shadow-lg transition active:scale-95"
+                  >
+                    <Phone className="w-5 h-5" />
+                  </button>
+
+                  <button 
+                    onClick={() => router.push(`/agendamento/${agend.id}`)}
+                    className="flex items-center justify-center gap-2 px-4 py-3 bg-gray-100 text-gray-700 rounded-xl font-semibold hover:bg-gray-200 transition"
+                  >
+                    <ChevronRight className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+            ))}
+
+            {agendamentos.length === 0 && (
+              <div className="text-center py-12">
+                <Calendar className="w-16 h-16 mx-auto mb-4 text-gray-300" />
+                <h3 className="text-lg font-bold text-gray-600 mb-2">Nenhum agendamento</h3>
+                <p className="text-gray-500 mb-6">Você ainda não tem horários marcados</p>
+                <button 
+                  onClick={() => setAbaAtiva('novo')}
+                  className="px-6 py-3 bg-gradient-to-r from-pink-500 to-purple-600 text-white rounded-xl font-bold"
+                >
+                  Agendar Agora
+                </button>
               </div>
             )}
-          </main>
-        )}
-      </div>
-
-      {/* ===== DESKTOP LAYOUT (>= md) ===== */}
-      <div className="hidden md:flex h-screen">
-        <aside className="w-96 bg-white border-r border-gray-200 flex flex-col">
-          <div className="p-6 border-b border-gray-100">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h1 className="text-2xl font-bold text-gray-800">Serviços</h1>
-                <p className="text-sm text-gray-500">Escolha o serviço desejado</p>
-              </div>
-              <div className="flex items-center gap-2">
-                <button onClick={handleLogout} className="p-2 text-gray-400 hover:text-red-500">
-                  <LogOut className="w-5 h-5" />
-                </button>
-                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-pink-400 to-purple-600 flex items-center justify-center">
-                  <span className="text-white font-bold text-sm">
-                    {user?.email?.charAt(0).toUpperCase()}
-                  </span>
-                </div>
-              </div>
-            </div>
           </div>
+        )}
 
-          <div className="flex-1 overflow-y-auto p-4 space-y-3">
-            {servicos.map((servico) => (
+        {/* ABA: NOVO AGENDAMENTO */}
+        {abaAtiva === 'novo' && (
+          <div className="grid grid-cols-2 gap-4">
+            {[
+              { nome: 'Cabelo', icon: Scissors, cor: 'from-yellow-400 to-orange-500' },
+              { nome: 'Maquiagem', icon: Paintbrush, cor: 'from-pink-400 to-rose-500' },
+              { nome: 'Manicure', icon: Sparkles, cor: 'from-red-400 to-pink-500' },
+              { nome: 'Pedicure', icon: Gem, cor: 'from-purple-400 to-violet-500' },
+            ].map((servico) => (
               <button
-                key={servico.id}
-                onClick={() => setServicoSelecionado(servico.id)}
-                className={`w-full text-left p-4 rounded-2xl border-2 transition-all ${
-                  servicoSelecionado === servico.id 
-                    ? 'border-pink-400 bg-pink-50' 
-                    : 'border-gray-100 bg-white hover:border-pink-200 hover:shadow-md'
-                }`}
+                key={servico.nome}
+                onClick={() => router.push(`/servico/${servico.nome.toLowerCase()}`)}
+                className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition text-center"
               >
-                <div className="flex items-center gap-4">
-                  <div className={`w-1 h-12 rounded-full bg-gradient-to-b ${servico.cor}`}></div>
-                  
-                  <div className={`w-12 h-12 rounded-xl ${servico.bgIcon} bg-opacity-10 flex items-center justify-center`}>
-                    <servico.icon className={`w-6 h-6 ${servico.textColor}`} />
-                  </div>
-                  
-                  <div className="flex-1">
-                    <h3 className={`font-bold text-lg ${servicoSelecionado === servico.id ? 'text-pink-600' : 'text-gray-800'}`}>
-                      {servico.nome}
-                    </h3>
-                    <p className="text-sm text-gray-500">{servico.descricao}</p>
-                  </div>
-
-                  <ChevronRight className={`w-5 h-5 ${servicoSelecionado === servico.id ? 'text-pink-400' : 'text-gray-300'}`} />
+                <div className={`w-14 h-14 mx-auto rounded-2xl bg-gradient-to-br ${servico.cor} flex items-center justify-center mb-3`}>
+                  <servico.icon className="w-7 h-7 text-white" />
                 </div>
+                <h3 className="font-bold text-gray-800">{servico.nome}</h3>
+                <p className="text-xs text-gray-500 mt-1">Ver profissionais</p>
               </button>
             ))}
           </div>
-        </aside>
+        )}
+      </main>
 
-        <main className="flex-1 bg-gray-50 p-8 overflow-y-auto">
-          {!servicoSelecionado ? (
-            <div className="h-full flex flex-col items-center justify-center text-center">
-              <div className="w-24 h-24 bg-gray-200 rounded-full flex items-center justify-center mb-4">
-                <Scissors className="w-10 h-10 text-gray-400" />
+      {/* MODAL DE CHAT */}
+      {chatAberto && agendamentoChat && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center sm:p-4">
+          <div className="bg-white w-full max-w-md h-[90vh] sm:h-[650px] sm:rounded-3xl rounded-t-3xl shadow-2xl flex flex-col overflow-hidden animate-slide-up">
+            
+            {/* Header */}
+            <div className="bg-gradient-to-r from-blue-500 to-blue-600 text-white px-4 py-4 flex items-center justify-between shadow-md">
+              <div className="flex items-center gap-3">
+                <button 
+                  onClick={() => setChatAberto(false)}
+                  className="p-1 hover:bg-white/20 rounded-full transition"
+                >
+                  <ArrowLeft className="w-6 h-6" />
+                </button>
+                
+                <div className="relative">
+                  <img 
+                    src={agendamentoChat.profissional_foto} 
+                    alt={agendamentoChat.profissional_nome}
+                    className="w-10 h-10 rounded-full border-2 border-white object-cover"
+                  />
+                  <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-400 border-2 border-white rounded-full"></div>
+                </div>
+                
+                <div>
+                  <h3 className="font-bold text-sm">{agendamentoChat.profissional_nome}</h3>
+                  <p className="text-xs opacity-90 flex items-center gap-1">
+                    <span className="w-2 h-2 bg-green-400 rounded-full"></span>
+                    Online • {agendamentoChat.servico}
+                  </p>
+                </div>
               </div>
-              <h2 className="text-2xl font-bold text-gray-700 mb-2">Escolha um serviço</h2>
-              <p className="text-gray-500 max-w-md">
-                Selecione uma categoria à esquerda para visualizar os profissionais disponíveis e agendar seu horário.
-              </p>
+              
+              <button 
+                onClick={() => setChatAberto(false)}
+                className="p-2 hover:bg-white/20 rounded-full transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
-          ) : (
-            <div className="max-w-4xl">
-              {servicoAtual && (
-                <div className="mb-8">
-                  <div className="flex items-center gap-4 mb-6">
-                    <div className={`w-16 h-16 rounded-2xl ${servicoAtual.bgIcon} bg-opacity-10 flex items-center justify-center`}>
-                      <servicoAtual.icon className={`w-8 h-8 ${servicoAtual.textColor}`} />
-                    </div>
-                    <div>
-                      <h2 className="text-3xl font-bold text-gray-800">{servicoAtual.nome}</h2>
-                      <p className="text-gray-500">
-                        {loadingProfissionais ? 'Carregando...' : `${profissionais.length} profissionais disponíveis`}
-                      </p>
+
+            {/* Info do Agendamento */}
+            <div className="bg-blue-50 px-4 py-3 border-b border-blue-100 flex items-center justify-between">
+              <div className="flex items-center gap-2 text-sm text-blue-800">
+                <Calendar className="w-4 h-4" />
+                <span className="font-medium">{agendamentoChat.data} às {agendamentoChat.horario}</span>
+              </div>
+              <span className={`text-xs px-2 py-1 rounded-full font-medium ${
+                agendamentoChat.status === 'confirmado' 
+                  ? 'bg-green-100 text-green-700' 
+                  : 'bg-yellow-100 text-yellow-700'
+              }`}>
+                {agendamentoChat.status}
+              </span>
+            </div>
+
+            {/* Mensagens */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-100">
+              <div className="text-center text-xs text-gray-400 my-4">Hoje</div>
+              
+              <div className="text-center text-xs text-gray-500 bg-white/50 py-2 px-4 rounded-full mx-auto w-fit">
+                Agendamento confirmado! Você pode conversar com {agendamentoChat.profissional_nome.split(' ')[0]} aqui.
+              </div>
+
+              {mensagens.map((msg) => (
+                <div 
+                  key={msg.id}
+                  className={`flex ${msg.remetente === 'cliente' ? 'justify-end' : 'justify-start'}`}
+                >
+                  <div 
+                    className={`max-w-[75%] px-4 py-3 rounded-2xl shadow-sm ${
+                      msg.remetente === 'cliente' 
+                        ? 'bg-blue-500 text-white rounded-br-md'
+                        : 'bg-white text-gray-800 rounded-bl-md'
+                    }`}
+                  >
+                    <p className="text-sm leading-relaxed">{msg.texto}</p>
+                    <div className={`flex items-center gap-1 mt-1 text-xs ${
+                      msg.remetente === 'cliente' ? 'text-blue-100' : 'text-gray-400'
+                    }`}>
+                      <span>{new Date(msg.created_at).toLocaleTimeString('pt-BR', { 
+                        hour: '2-digit', 
+                        minute: '2-digit' 
+                      })}</span>
+                      {msg.remetente === 'cliente' && <span className="ml-1">✓✓</span>}
                     </div>
                   </div>
-
-                  {loadingProfissionais ? (
-                    <div className="flex items-center justify-center py-12">
-                      <Loader2 className="w-8 h-8 text-pink-500 animate-spin" />
-                    </div>
-                  ) : profissionais.length === 0 ? (
-                    <div className="text-center py-12 text-gray-500 bg-white rounded-2xl border border-gray-200">
-                      <p className="text-lg">Nenhum profissional disponível para esta categoria.</p>
-                      <p className="text-sm mt-2">Tente outra categoria ou volte mais tarde.</p>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                      {profissionais.map((prof) => (
-                        <div 
-                          key={prof.id}
-                          className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 hover:shadow-md transition-all cursor-pointer group"
-                          onClick={() => router.push(`/profissional/${prof.id}`)}
-                        >
-                          <div className="flex items-start gap-4">
-                            <div className="relative">
-                              <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-pink-400 to-purple-600 flex items-center justify-center text-white text-2xl font-bold">
-                                {prof.nome?.charAt(0).toUpperCase() || 'P'}
-                              </div>
-                              {prof.ativo && (
-                                <div className="absolute -bottom-2 -right-2 w-4 h-4 bg-green-500 border-2 border-white rounded-full"></div>
-                              )}
-                            </div>
-                            
-                            <div className="flex-1">
-                              <div className="flex items-start justify-between">
-                                <div>
-                                  <h3 className="font-bold text-xl text-gray-800 group-hover:text-pink-600 transition-colors">{prof.nome}</h3>
-                                  <div className="flex items-center gap-2 mt-1">
-                                    <Star className="w-4 h-4 text-yellow-400 fill-current" />
-                                    <span className="font-medium text-gray-700">{prof.avaliacao || 5.0}</span>
-                                  </div>
-                                </div>
-                                <span className="text-2xl font-bold text-gray-800">
-                                  R$ {prof.preco_hora || 0}
-                                </span>
-                              </div>
-                              
-                              <div className="flex items-center gap-4 mt-3 text-sm text-gray-500">
-                                <span className="flex items-center gap-1">
-                                  <MapPin className="w-4 h-4 text-green-500" />
-                                  {prof.cidade || 'Cidade não informada'}
-                                </span>
-                              </div>
-
-                              <button className="mt-4 w-full py-3 bg-gradient-to-r from-pink-500 to-purple-600 text-white font-semibold rounded-xl hover:opacity-90 transition-opacity">
-                                Agendar Horário
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
                 </div>
-              )}
+              ))}
+              <div ref={messagesEndRef} />
             </div>
-          )}
-        </main>
+
+            {/* Input */}
+            <div className="p-3 bg-white border-t border-gray-200">
+              <div className="flex items-center gap-2 bg-gray-100 rounded-full px-4 py-2">
+                <input
+                  type="text"
+                  value={novaMensagem}
+                  onChange={(e) => setNovaMensagem(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && enviarMensagem()}
+                  placeholder="Mensagem..."
+                  className="flex-1 bg-transparent focus:outline-none text-gray-800 placeholder-gray-500"
+                />
+                <button 
+                  onClick={enviarMensagem}
+                  disabled={!novaMensagem.trim()}
+                  className={`p-2 rounded-full transition ${
+                    novaMensagem.trim() 
+                      ? 'bg-blue-500 text-white' 
+                      : 'bg-gray-300 text-gray-500'
+                  }`}
+                >
+                  <Send className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bottom Navigation */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-4 max-w-md mx-auto z-40">
+        <div className="flex justify-around items-center">
+          <button 
+            onClick={() => setAbaAtiva('agendamentos')}
+            className={`flex flex-col items-center gap-1 ${abaAtiva === 'agendamentos' ? 'text-blue-500' : 'text-gray-400'}`}
+          >
+            <div className={`p-2 rounded-xl ${abaAtiva === 'agendamentos' ? 'bg-blue-50' : ''}`}>
+              <Calendar className="w-5 h-5" />
+            </div>
+            <span className="text-xs font-medium">Agendamentos</span>
+          </button>
+          
+          <button 
+            onClick={() => setAbaAtiva('novo')}
+            className={`flex flex-col items-center gap-1 ${abaAtiva === 'novo' ? 'text-blue-500' : 'text-gray-400'}`}
+          >
+            <div className={`p-2 rounded-xl ${abaAtiva === 'novo' ? 'bg-blue-50' : ''}`}>
+              <Search className="w-5 h-5" />
+            </div>
+            <span className="text-xs font-medium">Novo</span>
+          </button>
+          
+          <button 
+            onClick={() => setAbaAtiva('perfil')}
+            className={`flex flex-col items-center gap-1 ${abaAtiva === 'perfil' ? 'text-blue-500' : 'text-gray-400'}`}
+          >
+            <div className={`p-2 rounded-xl ${abaAtiva === 'perfil' ? 'bg-blue-50' : ''}`}>
+              <User className="w-5 h-5" />
+            </div>
+            <span className="text-xs font-medium">Perfil</span>
+          </button>
+        </div>
       </div>
     </div>
   )
