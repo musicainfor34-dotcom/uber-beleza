@@ -390,38 +390,53 @@ export default function ClienteDashboard() {
     setDataAgendamento(new Date().toISOString().split('T')[0])
   }
 
-  async function salvarAgendamento(e: React.FormEvent) {
-    e.preventDefault()
-    if (!user?.id || !profissionalAgendar) return
+async function salvarAgendamento(e: React.FormEvent) {
+  e.preventDefault()
+  if (!user?.id || !profissionalAgendar) return
 
-    setSalvandoAgendamento(true)
-    try {
-      const { error } = await supabase.from('agendamentos').insert({
-        cliente_id: user.id,
-        profissional_id: profissionalAgendar.id,
-        data_agendamento: dataAgendamento,
-        hora_inicio: horaAgendamento,
-        hora_fim: calcularHoraFim(horaAgendamento, 60),
-        endereco: enderecoAgendamento || 'A combinar',
-        bairro: 'Centro',
-        cidade: profissionalAgendar.cidade || 'Porto Velho',
-        status: 'pendente',
-        valor_total: profissionalAgendar.preco_hora || 80,
-        servico_id: 'servico-padrao'
-      })
-
-      if (error) throw error
-      
-      alert('✅ Agendamento solicitado! O profissional irá confirmar.')
-      setModalAgendamento(false)
-      setEnderecoAgendamento('')
-    } catch (error) {
-      console.error('Erro:', error)
-      alert('❌ Erro ao agendar. Tente novamente.')
-    } finally {
-      setSalvandoAgendamento(false)
-    }
+  setSalvandoAgendamento(true)
+  
+  // Dados que serão enviados
+  const dadosAgendamento = {
+    cliente_id: user.id,
+    profissional_id: profissionalAgendar.id,
+    data_agendamento: dataAgendamento,
+    hora_inicio: horaAgendamento,
+    hora_fim: calcularHoraFim(horaAgendamento, 60),
+    endereco: enderecoAgendamento || 'A combinar',
+    bairro: 'Centro',
+    cidade: profissionalAgendar.cidade || 'Porto Velho',
+    status: 'pendente',
+    valor_total: profissionalAgendar.preco_hora || 80,
+    servico_id: 'servico-padrao'
   }
+
+  // DEBUG: Veja no console exatamente o que está sendo enviado
+  console.log('Dados do agendamento:', dadosAgendamento)
+
+  try {
+    const { data, error } = await supabase
+      .from('agendamentos')
+      .insert(dadosAgendamento)
+      .select()
+
+    if (error) {
+      console.error('Erro detalhado do Supabase:', error)
+      alert(`❌ Erro: ${error.message}`)
+      throw error
+    }
+    
+    console.log('Agendamento criado:', data)
+    alert('✅ Agendamento solicitado! O profissional irá confirmar.')
+    setModalAgendamento(false)
+    setEnderecoAgendamento('')
+  } catch (error: any) {
+    console.error('Erro completo:', error)
+    alert(`❌ Erro ao agendar: ${error?.message || 'Tente novamente'}`)
+  } finally {
+    setSalvandoAgendamento(false)
+  }
+}
 
   function calcularHoraFim(hora: string, minutos: number) {
     const [h, m] = hora.split(':').map(Number)
