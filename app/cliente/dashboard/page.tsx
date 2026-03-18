@@ -102,6 +102,68 @@ export default function ClienteDashboard() {
     }
   }, [categoriaSelecionada])
 
+  // 🔔 NOVO: Escuta mensagens em tempo real quando chat está aberto
+  useEffect(() => {
+    if (!chatAberto || !conversaSelecionada) return
+
+    // Canal para escutar novas mensagens desta conversa
+    const channel = supabase
+      .channel(`messages-${conversaSelecionada.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: `conversation_id=eq.${conversaSelecionada.id}`
+        },
+        (payload) => {
+          const novaMsg = payload.new as Mensagem
+          
+          // Só adiciona se for mensagem do profissional (evita duplicar as do cliente)
+          if (novaMsg.sender_type === 'professional') {
+            setMensagens((prev) => [...prev, novaMsg])
+            
+            // Marca como lida automaticamente já que está vendo
+            supabase.from('conversations')
+              .update({ unread_client: false })
+              .eq('id', conversaSelecionada.id)
+          }
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [chatAberto, conversaSelecionada])
+
+  // 🔔 NOVO: Escuta atualizações na lista de conversas (preview/last_message)
+  useEffect(() => {
+    if (!user?.id) return
+
+    const channel = supabase
+      .channel(`conversas-cliente-${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'conversations',
+          filter: `client_id=eq.${user.id}`
+        },
+        () => {
+          // Recarrega a lista de conversas quando houver mudança
+          carregarConversas()
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [user?.id])
+
   async function checkUser() {
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) { router.push('/login'); return }
@@ -166,14 +228,54 @@ export default function ClienteDashboard() {
     setConversaSelecionada({ id: conversaId, professional_id: profissional.id, professional_nome: profissional.nome, unread_client: false, updated_at: new Date().toISOString() })
     setMensagens(msgs || [])
     setChatAberto(true)
+    
+    // Marca como lida ao abrir
+    await supabase.from('conversations').update({ unread_client: false }).eq('id', conversaId)
+  }
+
+  // Abrir chat a partir da lista de conversas (sidebar)
+  async function abrirChatExistente(conversa: Conversa) {
+    setConversaSelecionada(conversa)
+    const { data: msgs } = await supabase
+      .from('messages')
+      .select('*')
+      .eq('conversation_id', conversa.id)
+      .order('created_at', { ascending: true })
+    setMensagens(msgs || [])
+    setChatAberto(true)
+    
+    // Marca como lida
+    await supabase.from('conversations').update({ unread_client: false }).eq('id', conversa.id)
+    
+    // Atualiza estado local
+    setConversas(prev => prev.map(c => 
+      c.id === conversa.id ? { ...c, unread_client: false } : c
+    ))
   }
 
   async function enviarMensagem() {
     if (!novaMensagem.trim() || !conversaSelecionada || !user?.id) return
-    const { error } = await supabase.from('messages').insert({ conversation_id: conversaSelecionada.id, sender_id: user.id, sender_type: 'client', content: novaMensagem.trim() })
+    const { error } = await supabase.from('messages').insert({ 
+      conversation_id: conversaSelecionada.id, 
+      sender_id: user.id, 
+      sender_type: 'client', 
+      content: novaMensagem.trim(),
+      read: false
+    })
     if (error) return
-    await supabase.from('conversations').update({ last_message: novaMensagem.trim(), updated_at: new Date().toISOString(), unread_professional: true }).eq('id', conversaSelecionada.id)
-    setMensagens(prev => [...prev, { id: Date.now().toString(), sender_type: 'client', content: novaMensagem.trim(), created_at: new Date().toISOString() }])
+    await supabase.from('conversations').update({ 
+      last_message: novaMensagem.trim(), 
+      updated_at: new Date().toISOString(), 
+      unread_professional: true 
+    }).eq('id', conversaSelecionada.id)
+    
+    // Adiciona localmente (otimista)
+    setMensagens(prev => [...prev, { 
+      id: Date.now().toString(), 
+      sender_type: 'client', 
+      content: novaMensagem.trim(), 
+      created_at: new Date().toISOString() 
+    }])
     setNovaMensagem('')
     setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
   }
@@ -184,7 +286,6 @@ export default function ClienteDashboard() {
 
     setSalvandoAgendamento(true)
     try {
-      // Calculando uma hora de fim (adicionando 1 hora por padrão)
       const [h, m] = horaAgendamento.split(':').map(Number)
       const horaFim = `${String(h + 1).padStart(2, '0')}:${String(m).padStart(2, '0')}`
 
@@ -199,7 +300,6 @@ export default function ClienteDashboard() {
         cidade: profissionalAgendar.cidade || 'Porto Velho',
         status: 'pendente',
         valor_total: profissionalAgendar.preco_hora || 80
-        // REMOVIDO: servico_id: 'servico-padrao' - estava causando erro de UUID
       })
 
       if (error) {
@@ -262,9 +362,18 @@ export default function ClienteDashboard() {
               ))
             ) : (
               conversas.map((conv) => (
-                <div key={conv.id} onClick={() => { setConversaSelecionada(conv); setChatAberto(true) }} className="p-4 border rounded-xl cursor-pointer hover:bg-gray-50">
-                  <h4 className="font-bold text-sm">{conv.professional_nome}</h4>
-                  <p className="text-xs text-gray-500 truncate">{conv.last_message}</p>
+                <div 
+                  key={conv.id} 
+                  onClick={() => abrirChatExistente(conv)} 
+                  className={`p-4 border rounded-xl cursor-pointer transition ${conv.unread_client ? 'bg-blue-50 border-blue-300' : 'hover:bg-gray-50'}`}
+                >
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <h4 className="font-bold text-sm text-gray-800">{conv.professional_nome}</h4>
+                      <p className="text-xs text-gray-500 truncate mt-1 max-w-[180px]">{conv.last_message || 'Clique para conversar'}</p>
+                    </div>
+                    {conv.unread_client && <span className="w-2 h-2 bg-blue-500 rounded-full mt-1"></span>}
+                  </div>
                 </div>
               ))
             )}
@@ -371,7 +480,7 @@ export default function ClienteDashboard() {
         </div>
       )}
 
-      {/* MODAL CHAT */}
+      {/* MODAL CHAT - Agora com scroll automático e realtime */}
       {chatAberto && conversaSelecionada && (
         <div className="fixed inset-0 z-50 flex flex-col bg-white md:inset-auto md:right-4 md:bottom-4 md:w-96 md:h-[500px] md:rounded-2xl md:shadow-2xl overflow-hidden">
           <div className="bg-purple-600 p-4 text-white flex justify-between items-center">
@@ -382,18 +491,36 @@ export default function ClienteDashboard() {
             <button onClick={() => setChatAberto(false)} className="hidden md:block"><X /></button>
           </div>
           <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50">
-            {mensagens.map((msg, i) => (
-              <div key={i} className={`flex ${msg.sender_type === 'client' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[80%] p-3 rounded-2xl text-sm ${msg.sender_type === 'client' ? 'bg-purple-600 text-white' : 'bg-white text-gray-800 border'}`}>
-                  {msg.content}
-                </div>
+            {mensagens.length === 0 ? (
+              <div className="h-full flex items-center justify-center text-gray-400 text-sm">
+                <p>Inicie a conversa...</p>
               </div>
-            ))}
+            ) : (
+              mensagens.map((msg, i) => (
+                <div key={i} className={`flex ${msg.sender_type === 'client' ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`max-w-[80%] p-3 rounded-2xl text-sm ${msg.sender_type === 'client' ? 'bg-purple-600 text-white' : 'bg-white text-gray-800 border'}`}>
+                    <p>{msg.content}</p>
+                    <span className="text-xs opacity-70 mt-1 block">
+                      {new Date(msg.created_at).toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'})}
+                    </span>
+                  </div>
+                </div>
+              ))
+            )}
             <div ref={messagesEndRef} />
           </div>
           <div className="p-4 border-t bg-white flex gap-2">
-            <input type="text" value={novaMensagem} onChange={(e) => setNovaMensagem(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && enviarMensagem()} placeholder="Mensagem..." className="flex-1 p-2 border rounded-full text-gray-900 bg-gray-100 px-4 outline-none" />
-            <button onClick={enviarMensagem} className="p-2 bg-purple-600 text-white rounded-full"><Send className="w-5 h-5" /></button>
+            <input 
+              type="text" 
+              value={novaMensagem} 
+              onChange={(e) => setNovaMensagem(e.target.value)} 
+              onKeyPress={(e) => e.key === 'Enter' && enviarMensagem()} 
+              placeholder="Mensagem..." 
+              className="flex-1 p-2 border rounded-full text-gray-900 bg-gray-100 px-4 outline-none" 
+            />
+            <button onClick={enviarMensagem} disabled={!novaMensagem.trim()} className="p-2 bg-purple-600 text-white rounded-full disabled:opacity-50">
+              <Send className="w-5 h-5" />
+            </button>
           </div>
         </div>
       )}
