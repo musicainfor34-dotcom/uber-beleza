@@ -397,19 +397,20 @@ async function salvarAgendamento(e: React.FormEvent) {
   setSalvandoAgendamento(true)
   
   // Dados que serão enviados
-  const dadosAgendamento = {
-    cliente_id: user.id,
-    profissional_id: profissionalAgendar.id,
-    data_agendamento: dataAgendamento,
-    hora_inicio: horaAgendamento,
-    hora_fim: calcularHoraFim(horaAgendamento, 60),
-    endereco: enderecoAgendamento || 'A combinar',
-    bairro: 'Centro',
-    cidade: profissionalAgendar.cidade || 'Porto Velho',
-    status: 'pendente',
-    valor_total: profissionalAgendar.preco_hora || 80,
-    servico_id: 'servico-padrao'
-  }
+const dadosAgendamento = {
+  cliente_id: user.id,
+  profissional_id: profissionalAgendar.id,
+  data_agendamento: dataAgendamento,
+  hora_inicio: horaAgendamento,
+  hora_fim: calcularHoraFim(horaAgendamento, 60),
+  endereco: enderecoAgendamento || 'A combinar',
+  bairro: 'Centro',
+  cidade: profissionalAgendar.cidade || 'Porto Velho',
+  status: 'pendente',
+  valor_total: profissionalAgendar.preco_hora || 80,
+  // REMOVA OU COMENTE ESTA LINHA:
+  // servico_id: 'servico-padrao'
+}
 
   // DEBUG: Veja no console exatamente o que está sendo enviado
   console.log('Dados do agendamento:', dadosAgendamento)
