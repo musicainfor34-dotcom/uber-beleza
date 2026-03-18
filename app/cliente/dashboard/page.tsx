@@ -79,6 +79,7 @@ export default function ClienteDashboard() {
   const [novaMensagem, setNovaMensagem] = useState('')
   const [conversas, setConversas] = useState<Conversa[]>([])
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const chatChannelRef = useRef<any>(null)
 
   // Agendamento
   const [modalAgendamento, setModalAgendamento] = useState(false)
@@ -103,6 +104,54 @@ export default function ClienteDashboard() {
       buscarProfissionais(categoriaSelecionada)
     }
   }, [categoriaSelecionada])
+
+  // 🎯 SUBSCRIPTION EM TEMPO REAL PARA O CHAT
+  useEffect(() => {
+    if (chatAberto && conversaSelecionada?.id) {
+      // Cria canal para escutar novas mensagens
+      const channel = supabase
+        .channel(`chat-cliente:${conversaSelecionada.id}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'messages',
+            filter: `conversation_id=eq.${conversaSelecionada.id}`
+          },
+          (payload) => {
+            const novaMsg = payload.new as Mensagem
+            
+            // Adiciona mensagem apenas se não existir (evita duplicatas)
+            setMensagens((prev) => {
+              if (prev.some(m => m.id === novaMsg.id)) return prev
+              return [...prev, novaMsg]
+            })
+            
+            // Scroll para baixo quando chegar nova mensagem
+            setTimeout(() => {
+              messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+            }, 100)
+          }
+        )
+        .subscribe()
+
+      chatChannelRef.current = channel
+
+      return () => {
+        if (chatChannelRef.current) {
+          supabase.removeChannel(chatChannelRef.current)
+        }
+      }
+    }
+  }, [chatAberto, conversaSelecionada?.id])
+
+  // Scroll quando mensagens mudam
+  useEffect(() => {
+    if (chatAberto && mensagens.length > 0) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }
+  }, [mensagens, chatAberto])
 
   async function checkUser() {
     const { data: { session } } = await supabase.auth.getSession()
@@ -163,7 +212,7 @@ export default function ClienteDashboard() {
 
   async function carregarConversas() {
     if (!user?.id) return
-    setLoadingProfissionais(true) // reaproveita o loading
+    setLoadingProfissionais(true)
     try {
       const { data, error } = await supabase
         .from('conversations')
@@ -198,6 +247,8 @@ export default function ClienteDashboard() {
       }
     } catch (error) {
       console.error('Erro:', error)
+    } finally {
+      setLoadingProfissionais(false)
     }
   }
 
@@ -236,7 +287,7 @@ export default function ClienteDashboard() {
       conversaId = nova.id
     }
 
-    // Busca mensagens
+    // Busca mensagens históricas
     const { data: msgs } = await supabase
       .from('messages')
       .select('*')
@@ -257,39 +308,80 @@ export default function ClienteDashboard() {
     
     // Marca como lida
     await supabase.from('conversations').update({ unread_client: false }).eq('id', conversaId)
+    
+    // Atualiza lista de conversas em background
+    carregarConversas()
+  }
+
+  // 🎯 ABRE CHAT A PARTIR DA LISTA DE CONVERSAS (já existente)
+  async function abrirChatExistente(conversa: Conversa) {
+    if (!user?.id) return
+
+    // Busca mensagens históricas
+    const { data: msgs } = await supabase
+      .from('messages')
+      .select('*')
+      .eq('conversation_id', conversa.id)
+      .order('created_at', { ascending: true })
+
+    setConversaSelecionada(conversa)
+    setMensagens(msgs || [])
+    setChatAberto(true)
+    
+    // Marca como lida
+    await supabase.from('conversations').update({ unread_client: false }).eq('id', conversa.id)
+    
+    // Atualiza lista
+    setConversas(prev => prev.map(c => 
+      c.id === conversa.id ? { ...c, unread_client: false } : c
+    ))
   }
 
   async function enviarMensagem() {
     if (!novaMensagem.trim() || !conversaSelecionada || !user?.id) return
 
+    const mensagemTemp = novaMensagem.trim()
+    
+    // Limpa input imediatamente para melhor UX
+    setNovaMensagem('')
+
     const { error } = await supabase.from('messages').insert({
       conversation_id: conversaSelecionada.id,
       sender_id: user.id,
       sender_type: 'client',
-      content: novaMensagem.trim(),
+      content: mensagemTemp,
       read: false
     })
 
     if (error) {
       console.error('Erro:', error)
+      // Restaura mensagem se deu erro
+      setNovaMensagem(mensagemTemp)
       return
     }
 
+    // Atualiza conversa com última mensagem
     await supabase.from('conversations').update({ 
-      last_message: novaMensagem.trim(),
+      last_message: mensagemTemp,
       updated_at: new Date().toISOString(),
       unread_professional: true 
     }).eq('id', conversaSelecionada.id)
 
+    // Atualiza localmente
     setMensagens(prev => [...prev, {
       id: Date.now().toString(),
       sender_type: 'client',
-      content: novaMensagem.trim(),
+      content: mensagemTemp,
       created_at: new Date().toISOString()
     }])
     
-    setNovaMensagem('')
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    // Scroll imediato
+    setTimeout(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }, 50)
+    
+    // Atualiza lista de conversas em background
+    carregarConversas()
   }
 
   function abrirModalAgendamento(prof: Profissional) {
@@ -441,10 +533,7 @@ export default function ClienteDashboard() {
                   conversas.map((conv) => (
                     <div 
                       key={conv.id}
-                      onClick={() => {
-                        setConversaSelecionada(conv)
-                        setChatAberto(true)
-                      }}
+                      onClick={() => abrirChatExistente(conv)}
                       className={`p-4 rounded-2xl border cursor-pointer transition ${
                         conv.unread_client 
                           ? 'border-blue-300 bg-blue-50' 
