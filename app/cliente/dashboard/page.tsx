@@ -18,8 +18,8 @@ import {
   X,
   Calendar,
   ArrowLeft,
-  Clock,
-  Home,
+  Phone,
+  DollarSign,
   Check
 } from 'lucide-react'
 
@@ -396,31 +396,28 @@ export default function ClienteDashboard() {
 
     setSalvandoAgendamento(true)
     try {
-      // Garantindo formatos corretos para o banco de dados
-      const payload = {
+      const { error } = await supabase.from('agendamentos').insert({
         cliente_id: user.id,
         profissional_id: profissionalAgendar.id,
         data_agendamento: dataAgendamento,
-        hora_inicio: `${horaAgendamento}:00`,
-        hora_fim: `${calcularHoraFim(horaAgendamento, 60)}:00`,
+        hora_inicio: horaAgendamento,
+        hora_fim: calcularHoraFim(horaAgendamento, 60),
         endereco: enderecoAgendamento || 'A combinar',
         bairro: 'Centro',
         cidade: profissionalAgendar.cidade || 'Porto Velho',
         status: 'pendente',
-        valor_total: Number(profissionalAgendar.preco_hora) || 80,
+        valor_total: profissionalAgendar.preco_hora || 80,
         servico_id: 'servico-padrao'
-      }
-
-      const { error } = await supabase.from('agendamentos').insert(payload)
+      })
 
       if (error) throw error
       
       alert('✅ Agendamento solicitado! O profissional irá confirmar.')
       setModalAgendamento(false)
       setEnderecoAgendamento('')
-    } catch (error: any) {
-      console.error('Erro detalhado:', error)
-      alert(`❌ Erro ao agendar: ${error.message || 'Tente novamente.'}`)
+    } catch (error) {
+      console.error('Erro:', error)
+      alert('❌ Erro ao agendar. Tente novamente.')
     } finally {
       setSalvandoAgendamento(false)
     }
@@ -742,7 +739,7 @@ export default function ClienteDashboard() {
                   onChange={(e) => setNovaMensagem(e.target.value)}
                   onKeyPress={(e) => e.key === 'Enter' && enviarMensagem()}
                   placeholder="Digite sua mensagem..."
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-full focus:outline-none focus:border-purple-500 text-base text-gray-900 bg-white"
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-full focus:outline-none focus:border-purple-500 text-base text-gray-900 bg-white placeholder:text-gray-400"
                 />
                 <button 
                   onClick={enviarMensagem}
@@ -772,51 +769,39 @@ export default function ClienteDashboard() {
             </div>
 
             <form onSubmit={salvarAgendamento} className="p-6 space-y-4">
-              {/* Campo Data com ícone de Calendário para desktop */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Data</label>
-                <div className="relative">
-                  <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-                  <input 
-                    type="date" 
-                    required
-                    value={dataAgendamento}
-                    onChange={(e) => setDataAgendamento(e.target.value)}
-                    min={new Date().toISOString().split('T')[0]}
-                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 text-gray-900 bg-white"
-                  />
-                </div>
+                <input 
+                  type="date" 
+                  required
+                  value={dataAgendamento}
+                  onChange={(e) => setDataAgendamento(e.target.value)}
+                  min={new Date().toISOString().split('T')[0]}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 text-gray-900 bg-white"
+                />
               </div>
 
-              {/* Campo Horário */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Horário</label>
-                <div className="relative">
-                  <Clock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-                  <select 
-                    value={horaAgendamento}
-                    onChange={(e) => setHoraAgendamento(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 text-gray-900 bg-white"
-                  >
-                    {['08:00','09:00','10:00','11:00','13:00','14:00','15:00','16:00','17:00'].map(h => (
-                      <option key={h} value={h}>{h}</option>
-                    ))}
-                  </select>
-                </div>
+                <select 
+                  value={horaAgendamento}
+                  onChange={(e) => setHoraAgendamento(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 text-gray-900 bg-white"
+                >
+                  {['08:00','09:00','10:00','11:00','13:00','14:00','15:00','16:00','17:00'].map(h => (
+                    <option key={h} value={h}>{h}</option>
+                  ))}
+                </select>
               </div>
 
-              {/* Campo Endereço */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Endereço</label>
-                <div className="relative">
-                  <Home className="absolute left-3 top-3 w-4 h-4 text-gray-400 pointer-events-none" />
-                  <textarea 
-                    value={enderecoAgendamento}
-                    onChange={(e) => setEnderecoAgendamento(e.target.value)}
-                    placeholder="Seu endereço completo"
-                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 h-24 resize-none text-gray-900 bg-white placeholder-gray-400"
-                  />
-                </div>
+                <textarea 
+                  value={enderecoAgendamento}
+                  onChange={(e) => setEnderecoAgendamento(e.target.value)}
+                  placeholder="Seu endereço completo"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 h-20 resize-none text-gray-900 bg-white placeholder:text-gray-400"
+                />
               </div>
 
               <div className="bg-purple-50 p-4 rounded-xl flex items-center justify-between">
@@ -828,21 +813,16 @@ export default function ClienteDashboard() {
                 <button 
                   type="button" 
                   onClick={() => setModalAgendamento(false)}
-                  className="flex-1 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700 font-medium"
+                  className="flex-1 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700"
                 >
                   Cancelar
                 </button>
                 <button 
                   type="submit" 
                   disabled={salvandoAgendamento}
-                  className="flex-1 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 font-medium flex items-center justify-center gap-2"
+                  className="flex-1 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 font-medium"
                 >
-                  {salvandoAgendamento ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Salvando...</span>
-                    </>
-                  ) : 'Confirmar'}
+                  {salvandoAgendamento ? 'Salvando...' : 'Confirmar'}
                 </button>
               </div>
             </form>
