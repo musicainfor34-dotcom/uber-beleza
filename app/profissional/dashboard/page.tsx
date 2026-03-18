@@ -186,8 +186,8 @@ useEffect(() => {
   // Toca imediatamente se houver pendentes ao carregar a página
   verificarEAlertar()
 
-  // Configura intervalo de 5 minutos (300000ms)
-  const interval = setInterval(verificarEAlertar, 300000)
+  // Configura intervalo de 5 minutos (60000ms)
+  const interval = setInterval(verificarEAlertar, 60000)
   setAlertaInterval(interval)
 
   // Limpa o intervalo quando o componente desmontar
