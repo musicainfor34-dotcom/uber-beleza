@@ -24,17 +24,25 @@ import {
 } from 'lucide-react'
 import ChatModal from './ChatModal'
 
+// Contexto de áudio global
+let audioContext: AudioContext | null = null
+
+// Função para inicializar o contexto de áudio (deve ser chamada após interação do usuário)
+const initAudioContext = () => {
+  if (!audioContext) {
+    audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
+  }
+  if (audioContext.state === 'suspended') {
+    audioContext.resume()
+  }
+}
+
 // Função para tocar som de notificação (beep)
-// Substitua a função playNotificationSound por esta:
 const playNotificationSound = () => {
   try {
-    // Cria o contexto de áudio (só funciona bem após interação do usuário)
-    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
+    initAudioContext()
     
-    // Se o contexto estiver suspenso (autoplay policy), tenta resumir
-    if (audioContext.state === 'suspended') {
-      audioContext.resume()
-    }
+    if (!audioContext) return
     
     const oscillator = audioContext.createOscillator()
     const gainNode = audioContext.createGain()
@@ -53,6 +61,7 @@ const playNotificationSound = () => {
     
     // Segundo beep
     setTimeout(() => {
+      if (!audioContext) return
       const osc2 = audioContext.createOscillator()
       const gain2 = audioContext.createGain()
       osc2.connect(gain2)
@@ -148,6 +157,20 @@ useEffect(() => {
   useEffect(() => {
     checkUser()
   }, [])
+  // Efeito para desbloquear áudio no primeiro clique do usuário
+useEffect(() => {
+  const handleFirstInteraction = () => {
+    initAudioContext()
+    console.log('🔓 Áudio desbloqueado pelo usuário')
+    document.removeEventListener('click', handleFirstInteraction)
+  }
+  
+  document.addEventListener('click', handleFirstInteraction)
+  
+  return () => {
+    document.removeEventListener('click', handleFirstInteraction)
+  }
+}, [])
 
 // Efeito para alerta sonoro de agendamentos pendentes (a cada 5 minutos)
 useEffect(() => {
