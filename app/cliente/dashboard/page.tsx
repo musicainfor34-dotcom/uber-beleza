@@ -447,30 +447,30 @@ export default function ClienteDashboard() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header Desktop */}
+      {/* Header Desktop/Mobile */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-30">
         <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Beleza Connect</h1>
-            <p className="text-sm text-gray-500">Olá, {user?.email?.split('@')[0]}</p>
+            <h1 className="text-xl md:text-2xl font-bold text-gray-900">Beleza Connect</h1>
+            <p className="text-xs md:text-sm text-gray-500">Olá, {user?.email?.split('@')[0]}</p>
           </div>
           <div className="flex items-center gap-3">
             <button 
               onClick={handleLogout}
               className="p-2 text-gray-400 hover:text-red-500 transition-colors"
             >
-              <LogOut className="w-6 h-6" />
+              <LogOut className="w-5 h-5 md:w-6 md:h-6" />
             </button>
-            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white font-bold">
+            <div className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white font-bold text-sm md:text-base">
               {user?.email?.charAt(0).toUpperCase()}
             </div>
           </div>
         </div>
       </header>
 
-      <div className="max-w-7xl mx-auto flex min-h-[calc(100vh-80px)]">
-        {/* Sidebar */}
-        <aside className="w-80 bg-white border-r border-gray-200 flex flex-col">
+      <div className="max-w-7xl mx-auto flex flex-col md:flex-row min-h-[calc(100vh-80px)]">
+        {/* Sidebar - Mobile: horizontal / Desktop: vertical lateral */}
+        <aside className="w-full md:w-80 bg-white border-b md:border-b-0 md:border-r border-gray-200 flex flex-col">
           <div className="p-4 border-b border-gray-100">
             <div className="flex gap-2">
               <button
@@ -503,22 +503,22 @@ export default function ClienteDashboard() {
                   <button
                     key={cat.id}
                     onClick={() => setCategoriaSelecionada(cat.id)}
-                    className={`w-full flex items-center gap-4 p-4 rounded-2xl border-2 transition-all text-left ${
+                    className={`w-full flex items-center gap-4 p-3 md:p-4 rounded-2xl border-2 transition-all text-left ${
                       categoriaSelecionada === cat.id 
                         ? 'border-pink-400 bg-pink-50' 
                         : 'border-gray-100 bg-white hover:border-pink-200 hover:shadow-md'
                     }`}
                   >
-                    <div className={`w-12 h-12 rounded-xl ${cat.bg} bg-opacity-20 flex items-center justify-center`}>
-                      <cat.icone className={`w-6 h-6 ${cat.text}`} />
+                    <div className={`w-10 h-10 md:w-12 md:h-12 rounded-xl ${cat.bg} bg-opacity-20 flex items-center justify-center flex-shrink-0`}>
+                      <cat.icone className={`w-5 h-5 md:w-6 md:h-6 ${cat.text}`} />
                     </div>
-                    <div className="flex-1">
-                      <h3 className={`font-bold ${categoriaSelecionada === cat.id ? 'text-pink-700' : 'text-gray-800'}`}>
+                    <div className="flex-1 min-w-0">
+                      <h3 className={`font-bold text-sm md:text-base ${categoriaSelecionada === cat.id ? 'text-pink-700' : 'text-gray-800'}`}>
                         {cat.nome}
                       </h3>
-                      <p className="text-xs text-gray-500">{cat.desc}</p>
+                      <p className="text-xs text-gray-500 truncate">{cat.desc}</p>
                     </div>
-                    <ChevronRight className={`w-5 h-5 ${categoriaSelecionada === cat.id ? 'text-pink-400' : 'text-gray-300'}`} />
+                    <ChevronRight className={`w-5 h-5 flex-shrink-0 ${categoriaSelecionada === cat.id ? 'text-pink-400' : 'text-gray-300'}`} />
                   </button>
                 ))}
               </div>
@@ -534,21 +534,21 @@ export default function ClienteDashboard() {
                     <div 
                       key={conv.id}
                       onClick={() => abrirChatExistente(conv)}
-                      className={`p-4 rounded-2xl border cursor-pointer transition ${
+                      className={`p-3 md:p-4 rounded-2xl border cursor-pointer transition ${
                         conv.unread_client 
                           ? 'border-blue-300 bg-blue-50' 
                           : 'border-gray-200 bg-white hover:shadow-md'
                       }`}
                     >
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white font-bold">
+                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white font-bold flex-shrink-0">
                           {conv.professional_nome.charAt(0)}
                         </div>
-                        <div className="flex-1">
-                          <h4 className="font-bold text-sm text-gray-800">{conv.professional_nome}</h4>
+                        <div className="flex-1 min-w-0">
+                          <h4 className="font-bold text-sm text-gray-800 truncate">{conv.professional_nome}</h4>
                           <p className="text-xs text-gray-500 truncate">{conv.last_message || 'Clique para conversar'}</p>
                         </div>
-                        {conv.unread_client && <span className="w-2 h-2 bg-blue-500 rounded-full"></span>}
+                        {conv.unread_client && <span className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0"></span>}
                       </div>
                     </div>
                   ))
@@ -559,15 +559,15 @@ export default function ClienteDashboard() {
         </aside>
 
         {/* Main Content */}
-        <main className="flex-1 p-6 overflow-y-auto bg-gray-50">
+        <main className="flex-1 p-4 md:p-6 overflow-y-auto bg-gray-50 w-full">
           {abaAtiva === 'servicos' ? (
             !categoriaSelecionada ? (
               <div className="h-full flex flex-col items-center justify-center text-gray-400">
-                <div className="w-20 h-20 bg-gray-200 rounded-full flex items-center justify-center mb-4">
-                  <Scissors className="w-8 h-8 text-gray-400" />
+                <div className="w-16 h-16 md:w-20 md:h-20 bg-gray-200 rounded-full flex items-center justify-center mb-4">
+                  <Scissors className="w-6 h-6 md:w-8 md:h-8 text-gray-400" />
                 </div>
-                <h2 className="text-xl font-bold text-gray-700 mb-2">Escolha um serviço</h2>
-                <p className="text-center max-w-md">Selecione uma categoria à esquerda para ver os profissionais disponíveis.</p>
+                <h2 className="text-lg md:text-xl font-bold text-gray-700 mb-2 text-center">Escolha um serviço</h2>
+                <p className="text-center max-w-md text-sm px-4">Selecione uma categoria à esquerda para ver os profissionais disponíveis.</p>
               </div>
             ) : (
               <div>
@@ -581,12 +581,12 @@ export default function ClienteDashboard() {
                   </button>
                   {categoriaAtual && (
                     <div className="flex items-center gap-3">
-                      <div className={`w-12 h-12 rounded-xl ${categoriaAtual.bg} bg-opacity-20 flex items-center justify-center`}>
-                        <categoriaAtual.icone className={`w-6 h-6 ${categoriaAtual.text}`} />
+                      <div className={`w-10 h-10 md:w-12 md:h-12 rounded-xl ${categoriaAtual.bg} bg-opacity-20 flex items-center justify-center flex-shrink-0`}>
+                        <categoriaAtual.icone className={`w-5 h-5 md:w-6 md:h-6 ${categoriaAtual.text}`} />
                       </div>
                       <div>
-                        <h2 className="text-2xl font-bold text-gray-800">{categoriaAtual.nome}</h2>
-                        <p className="text-gray-500">
+                        <h2 className="text-xl md:text-2xl font-bold text-gray-800">{categoriaAtual.nome}</h2>
+                        <p className="text-gray-500 text-sm md:text-base">
                           {loadingProfissionais ? 'Carregando...' : `${profissionais.length} profissionais encontrados`}
                         </p>
                       </div>
@@ -600,69 +600,76 @@ export default function ClienteDashboard() {
                     <Loader2 className="w-8 h-8 animate-spin text-purple-600" />
                   </div>
                 ) : profissionais.length === 0 ? (
-                  <div className="bg-white rounded-2xl p-12 text-center border border-gray-200">
-                    <div className="text-6xl mb-4">🔍</div>
-                    <h3 className="text-lg font-bold text-gray-700 mb-2">Nenhum profissional encontrado</h3>
-                    <p className="text-gray-500 mb-4">Não encontramos profissionais para {categoriaAtual?.nome} no momento.</p>
+                  <div className="bg-white rounded-2xl p-8 md:p-12 text-center border border-gray-200">
+                    <div className="text-5xl md:text-6xl mb-4">🔍</div>
+                    <h3 className="text-base md:text-lg font-bold text-gray-700 mb-2">Nenhum profissional encontrado</h3>
+                    <p className="text-gray-500 mb-4 text-sm md:text-base">Não encontramos profissionais para {categoriaAtual?.nome} no momento.</p>
                     <button 
                       onClick={() => setCategoriaSelecionada(null)}
-                      className="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+                      className="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm md:text-base"
                     >
                       Ver outras categorias
                     </button>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 gap-4">
                     {profissionais.map((prof) => (
-                      <div key={prof.id} className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 hover:shadow-md transition">
-                        <div className="flex items-start gap-4">
-                          <div className="w-16 h-16 rounded-full bg-gradient-to-br from-purple-400 to-pink-500 flex items-center justify-center text-white text-xl font-bold">
+                      <div key={prof.id} className="bg-white rounded-2xl p-4 md:p-6 shadow-sm border border-gray-100 hover:shadow-md transition">
+                        <div className="flex items-start gap-3 md:gap-4">
+                          <div className="w-12 h-12 md:w-16 md:h-16 rounded-full bg-gradient-to-br from-purple-400 to-pink-500 flex items-center justify-center text-white text-lg md:text-xl font-bold flex-shrink-0">
                             {prof.nome?.charAt(0).toUpperCase() || 'P'}
                           </div>
-                          <div className="flex-1">
+                          <div className="flex-1 min-w-0">
                             <div className="flex items-start justify-between mb-1">
-                              <div>
-                                <h3 className="font-bold text-lg text-gray-800">{prof.nome}</h3>
-                                <div className="flex items-center gap-1 text-sm text-gray-500">
-                                  <MapPin className="w-4 h-4" />
-                                  {prof.cidade || 'Porto Velho'}
+                              <div className="min-w-0">
+                                <h3 className="font-bold text-base md:text-lg text-gray-800 truncate">{prof.nome}</h3>
+                                <div className="flex items-center gap-1 text-xs md:text-sm text-gray-500">
+                                  <MapPin className="w-3 h-3 md:w-4 md:h-4 flex-shrink-0" />
+                                  <span className="truncate">{prof.cidade || 'Porto Velho'}</span>
                                 </div>
                               </div>
-                              <div className="text-right">
-                                <div className="flex items-center gap-1 text-sm">
-                                  <Star className="w-4 h-4 text-yellow-400 fill-current" />
+                              <div className="text-right flex-shrink-0">
+                                <div className="flex items-center gap-1 text-xs md:text-sm">
+                                  <Star className="w-3 h-3 md:w-4 md:h-4 text-yellow-400 fill-current" />
                                   <span className="font-medium">{prof.avaliacao || 5.0}</span>
                                 </div>
                               </div>
                             </div>
                             
-                            <div className="flex flex-wrap gap-2 my-3">
-                              {prof.especialidade?.map((esp, idx) => (
-                                <span key={idx} className="bg-gray-100 text-gray-600 text-xs px-2 py-1 rounded-full">
+                            <div className="flex flex-wrap gap-1 md:gap-2 my-2 md:my-3">
+                              {prof.especialidade?.slice(0, 3).map((esp, idx) => (
+                                <span key={idx} className="bg-gray-100 text-gray-600 text-[10px] md:text-xs px-2 py-1 rounded-full">
                                   {esp}
                                 </span>
                               ))}
+                              {prof.especialidade?.length > 3 && (
+                                <span className="bg-gray-100 text-gray-600 text-[10px] md:text-xs px-2 py-1 rounded-full">
+                                  +{prof.especialidade.length - 3}
+                                </span>
+                              )}
                             </div>
 
-                            <div className="flex items-center justify-between pt-3 border-t border-gray-100">
+                            <div className="flex items-center justify-between pt-2 md:pt-3 border-t border-gray-100">
                               <div>
-                                <span className="text-2xl font-bold text-purple-600">R$ {prof.preco_hora || 0}</span>
-                                <span className="text-sm text-gray-400">/hora</span>
+                                <span className="text-xl md:text-2xl font-bold text-purple-600">R$ {prof.preco_hora || 0}</span>
+                                <span className="text-xs md:text-sm text-gray-400">/hora</span>
                               </div>
                               <div className="flex gap-2">
                                 <button 
                                   onClick={() => abrirChat(prof)}
-                                  className="px-4 py-2 border-2 border-purple-200 text-purple-600 rounded-lg hover:bg-purple-50 font-medium text-sm flex items-center gap-2"
+                                  className="px-3 py-1.5 md:px-4 md:py-2 border-2 border-purple-200 text-purple-600 rounded-lg hover:bg-purple-50 font-medium text-xs md:text-sm flex items-center gap-1 md:gap-2"
                                 >
-                                  <MessageCircle className="w-4 h-4" />
-                                  Conversar
+                                  <MessageCircle className="w-3 h-3 md:w-4 md:h-4" />
+                                  <span className="hidden sm:inline">Conversar</span>
+                                  <span className="sm:hidden">Chat</span>
                                 </button>
                                 <button 
                                   onClick={() => abrirModalAgendamento(prof)}
-                                  className="px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-500 text-white rounded-lg hover:opacity-90 font-medium text-sm flex items-center gap-2"
+                                  className="px-3 py-1.5 md:px-4 md:py-2 bg-gradient-to-r from-purple-600 to-pink-500 text-white rounded-lg hover:opacity-90 font-medium text-xs md:text-sm flex items-center gap-1 md:gap-2"
                                 >
-                                  <Calendar className="w-4 h-4" />
-                                  Agendar
+                                  <Calendar className="w-3 h-3 md:w-4 md:h-4" />
+                                  <span className="hidden sm:inline">Agendar</span>
+                                  <span className="sm:hidden">Agendar</span>
                                 </button>
                               </div>
                             </div>
@@ -676,9 +683,9 @@ export default function ClienteDashboard() {
             )
           ) : (
             <div className="h-full flex flex-col items-center justify-center text-gray-400">
-              <MessageCircle className="w-16 h-16 mb-4 opacity-30" />
-              <h2 className="text-2xl font-bold text-gray-700 mb-2">Suas Conversas</h2>
-              <p>Selecione uma conversa à esquerda para começar.</p>
+              <MessageCircle className="w-12 h-12 md:w-16 md:h-16 mb-4 opacity-30" />
+              <h2 className="text-xl md:text-2xl font-bold text-gray-700 mb-2 text-center">Suas Conversas</h2>
+              <p className="text-center text-sm px-4">Selecione uma conversa à esquerda para começar.</p>
             </div>
           )}
         </main>
@@ -686,8 +693,8 @@ export default function ClienteDashboard() {
 
       {/* Modal de Chat */}
       {chatAberto && conversaSelecionada && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white w-full max-w-lg h-[600px] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+        <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/50 p-0 md:p-4">
+          <div className="bg-white w-full md:max-w-lg md:h-[600px] h-[100vh] md:rounded-2xl shadow-2xl flex flex-col overflow-hidden">
             <div className="bg-gradient-to-r from-purple-600 to-pink-500 text-white px-4 py-4 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <button onClick={() => setChatAberto(false)} className="p-1 hover:bg-white/20 rounded">
@@ -709,7 +716,7 @@ export default function ClienteDashboard() {
             <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50">
               {mensagens.map((msg, idx) => (
                 <div key={idx} className={`flex ${msg.sender_type === 'client' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[70%] px-4 py-2 rounded-2xl ${
+                  <div className={`max-w-[80%] md:max-w-[70%] px-4 py-2 rounded-2xl ${
                     msg.sender_type === 'client' 
                       ? 'bg-purple-600 text-white rounded-br-md' 
                       : 'bg-white text-gray-800 rounded-bl-md border border-gray-200'
@@ -732,12 +739,12 @@ export default function ClienteDashboard() {
                   onChange={(e) => setNovaMensagem(e.target.value)}
                   onKeyPress={(e) => e.key === 'Enter' && enviarMensagem()}
                   placeholder="Digite sua mensagem..."
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-full focus:outline-none focus:border-purple-500"
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-full focus:outline-none focus:border-purple-500 text-base"
                 />
                 <button 
                   onClick={enviarMensagem}
                   disabled={!novaMensagem.trim()}
-                  className="p-2 bg-purple-600 text-white rounded-full hover:bg-purple-700 disabled:opacity-50"
+                  className="p-3 bg-purple-600 text-white rounded-full hover:bg-purple-700 disabled:opacity-50"
                 >
                   <Send className="w-5 h-5" />
                 </button>
@@ -750,7 +757,7 @@ export default function ClienteDashboard() {
       {/* Modal de Agendamento */}
       {modalAgendamento && profissionalAgendar && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden">
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
             <div className="bg-gradient-to-r from-purple-600 to-pink-500 text-white px-6 py-4 flex items-center justify-between">
               <div>
                 <h3 className="font-bold text-lg">Agendar com {profissionalAgendar.nome}</h3>
