@@ -1,6 +1,9 @@
+
+
+
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@supabase/supabase-js'
 import { 
@@ -11,16 +14,10 @@ import {
   Star,
   MapPin,
   LogOut,
+  ArrowRight,
   ChevronRight,
-  Loader2,
-  MessageCircle,
-  Send,
-  X,
-  Calendar,
-  ArrowLeft,
-  Phone,
-  DollarSign,
-  Check
+  Clock,
+  Loader2
 } from 'lucide-react'
 
 const supabase = createClient(
@@ -28,502 +25,381 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
-const CATEGORIAS = [
-  { id: 'Cabelo', nome: 'Cabelo', icone: Scissors, cor: 'from-yellow-400 to-orange-500', bg: 'bg-yellow-400', text: 'text-yellow-500', desc: 'Corte, coloração, hidratação' },
-  { id: 'Maquiagem', nome: 'Maquiagem', icone: Paintbrush, cor: 'from-pink-400 to-rose-500', bg: 'bg-pink-400', text: 'text-pink-500', desc: 'Social, festa e noiva' },
-  { id: 'Manicure', nome: 'Manicure', icone: Sparkles, cor: 'from-red-400 to-pink-500', bg: 'bg-red-400', text: 'text-red-500', desc: 'Esmaltação e nail art' },
-  { id: 'Pedicure', nome: 'Pedicure', icone: Gem, cor: 'from-purple-400 to-violet-500', bg: 'bg-purple-400', text: 'text-purple-500', desc: 'Spa dos pés e cuidados' }
-]
-
-interface Profissional {
-  id: string
-  nome: string
-  email: string
-  telefone: string
-  cidade: string
-  preco_hora: number
-  avaliacao: number
-  especialidade: string[]
-  ativo: boolean
-}
-
-interface Conversa {
-  id: string
-  professional_id: string
-  professional_nome: string
-  last_message?: string
-  unread_client: boolean
-  updated_at: string
-}
-
-interface Mensagem {
-  id: string
-  sender_type: 'client' | 'professional'
-  content: string
-  created_at: string
-}
-
 export default function ClienteDashboard() {
   const router = useRouter()
   const [user, setUser] = useState<any>(null)
   const [loading, setLoading] = useState(true)
-  const [abaAtiva, setAbaAtiva] = useState<'servicos' | 'conversas'>('servicos')
-  const [categoriaSelecionada, setCategoriaSelecionada] = useState<string | null>(null)
-  const [profissionais, setProfissionais] = useState<Profissional[]>([])
+  const [servicoSelecionado, setServicoSelecionado] = useState<string | null>(null)
+  const [profissionais, setProfissionais] = useState<any[]>([])
   const [loadingProfissionais, setLoadingProfissionais] = useState(false)
-  
-  const [chatAberto, setChatAberto] = useState(false)
-  const [conversaSelecionada, setConversaSelecionada] = useState<Conversa | null>(null)
-  const [mensagens, setMensagens] = useState<Mensagem[]>([])
-  const [novaMensagem, setNovaMensagem] = useState('')
-  const [conversas, setConversas] = useState<Conversa[]>([])
-  const messagesEndRef = useRef<HTMLDivElement>(null)
-
-  const [modalAgendamento, setModalAgendamento] = useState(false)
-  const [profissionalAgendar, setProfissionalAgendar] = useState<Profissional | null>(null)
-  const [dataAgendamento, setDataAgendamento] = useState('')
-  const [horaAgendamento, setHoraAgendamento] = useState('09:00')
-  const [enderecoAgendamento, setEnderecoAgendamento] = useState('')
-  const [salvandoAgendamento, setSalvandoAgendamento] = useState(false)
 
   useEffect(() => {
     checkUser()
   }, [])
 
   useEffect(() => {
-    if (user?.id && abaAtiva === 'conversas') {
-      carregarConversas()
+    if (servicoSelecionado) {
+      buscarProfissionais(servicoSelecionado)
     }
-  }, [user, abaAtiva])
-
-  useEffect(() => {
-    if (categoriaSelecionada) {
-      buscarProfissionais(categoriaSelecionada)
-    }
-  }, [categoriaSelecionada])
-
-  // 🔔 NOVO: Escuta mensagens em tempo real quando chat está aberto
-  useEffect(() => {
-    if (!chatAberto || !conversaSelecionada) return
-
-    // Canal para escutar novas mensagens desta conversa
-    const channel = supabase
-      .channel(`messages-${conversaSelecionada.id}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'messages',
-          filter: `conversation_id=eq.${conversaSelecionada.id}`
-        },
-        (payload) => {
-          const novaMsg = payload.new as Mensagem
-          
-          // Só adiciona se for mensagem do profissional (evita duplicar as do cliente)
-          if (novaMsg.sender_type === 'professional') {
-            setMensagens((prev) => [...prev, novaMsg])
-            
-            // Marca como lida automaticamente já que está vendo
-            supabase.from('conversations')
-              .update({ unread_client: false })
-              .eq('id', conversaSelecionada.id)
-          }
-        }
-      )
-      .subscribe()
-
-    return () => {
-      supabase.removeChannel(channel)
-    }
-  }, [chatAberto, conversaSelecionada])
-
-  // 🔔 NOVO: Escuta atualizações na lista de conversas (preview/last_message)
-  useEffect(() => {
-    if (!user?.id) return
-
-    const channel = supabase
-      .channel(`conversas-cliente-${user.id}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'conversations',
-          filter: `client_id=eq.${user.id}`
-        },
-        () => {
-          // Recarrega a lista de conversas quando houver mudança
-          carregarConversas()
-        }
-      )
-      .subscribe()
-
-    return () => {
-      supabase.removeChannel(channel)
-    }
-  }, [user?.id])
+  }, [servicoSelecionado])
 
   async function checkUser() {
     const { data: { session } } = await supabase.auth.getSession()
-    if (!session) { router.push('/login'); return }
+    if (!session) {
+      router.push('/login')
+      return
+    }
     setUser(session.user)
     setLoading(false)
   }
 
-  async function buscarProfissionais(categoria: string) {
+  async function buscarProfissionais(especialidade: string) {
     setLoadingProfissionais(true)
     try {
+      // Buscar profissionais do Supabase filtrando por especialidade
       const { data, error } = await supabase
         .from('professionals')
         .select('*')
         .eq('ativo', true)
-        .contains('especialidade', [categoria])
+        .order('created_at', { ascending: false })
 
       if (error) throw error
 
-      if (!data || data.length === 0) {
-        const { data: todos } = await supabase.from('professionals').select('*').eq('ativo', true)
-        const filtrados = (todos || []).filter((p: Profissional) => 
-          (p.especialidade || []).some((e: string) => e.toLowerCase().includes(categoria.toLowerCase()))
+      // Filtrar por especialidade (como é um array, filtramos no JS)
+      const filtrados = (data || []).filter((prof: any) => {
+        const especs = prof.especialidade || []
+        return especs.some((esp: string) => 
+          esp.toLowerCase() === especialidade.toLowerCase()
         )
-        setProfissionais(filtrados)
-      } else {
-        setProfissionais(data)
-      }
-    } catch (error) { console.error(error) } finally { setLoadingProfissionais(false) }
-  }
-
-  async function carregarConversas() {
-    if (!user?.id) return
-    try {
-      const { data, error } = await supabase
-        .from('conversations')
-        .select('*')
-        .eq('client_id', user.id)
-        .order('updated_at', { ascending: false })
-
-      if (data) {
-        const profIds = data.map(c => c.professional_id)
-        const { data: profs } = await supabase.from('professionals').select('id, nome').in('id', profIds)
-        const profMap = (profs || []).reduce((acc, p) => { acc[p.id] = p.nome; return acc }, {} as any)
-        const conversasFormatadas = data.map((conv: any) => ({
-          ...conv,
-          professional_nome: profMap[conv.professional_id] || 'Profissional'
-        }))
-        setConversas(conversasFormatadas)
-      }
-    } catch (error) { console.error(error) }
-  }
-
-  async function abrirChat(profissional: Profissional) {
-    if (!user?.id) return
-    const { data: existente } = await supabase.from('conversations').select('*').eq('client_id', user.id).eq('professional_id', profissional.id).single()
-    let conversaId = existente?.id
-    if (!existente) {
-      const { data: nova } = await supabase.from('conversations').insert({ client_id: user.id, professional_id: profissional.id, client_email: user.email, professional_email: profissional.email }).select().single()
-      conversaId = nova.id
-    }
-    const { data: msgs } = await supabase.from('messages').select('*').eq('conversation_id', conversaId).order('created_at', { ascending: true })
-    setConversaSelecionada({ id: conversaId, professional_id: profissional.id, professional_nome: profissional.nome, unread_client: false, updated_at: new Date().toISOString() })
-    setMensagens(msgs || [])
-    setChatAberto(true)
-    
-    // Marca como lida ao abrir
-    await supabase.from('conversations').update({ unread_client: false }).eq('id', conversaId)
-  }
-
-  // Abrir chat a partir da lista de conversas (sidebar)
-  async function abrirChatExistente(conversa: Conversa) {
-    setConversaSelecionada(conversa)
-    const { data: msgs } = await supabase
-      .from('messages')
-      .select('*')
-      .eq('conversation_id', conversa.id)
-      .order('created_at', { ascending: true })
-    setMensagens(msgs || [])
-    setChatAberto(true)
-    
-    // Marca como lida
-    await supabase.from('conversations').update({ unread_client: false }).eq('id', conversa.id)
-    
-    // Atualiza estado local
-    setConversas(prev => prev.map(c => 
-      c.id === conversa.id ? { ...c, unread_client: false } : c
-    ))
-  }
-
-  async function enviarMensagem() {
-    if (!novaMensagem.trim() || !conversaSelecionada || !user?.id) return
-    const { error } = await supabase.from('messages').insert({ 
-      conversation_id: conversaSelecionada.id, 
-      sender_id: user.id, 
-      sender_type: 'client', 
-      content: novaMensagem.trim(),
-      read: false
-    })
-    if (error) return
-    await supabase.from('conversations').update({ 
-      last_message: novaMensagem.trim(), 
-      updated_at: new Date().toISOString(), 
-      unread_professional: true 
-    }).eq('id', conversaSelecionada.id)
-    
-    // Adiciona localmente (otimista)
-    setMensagens(prev => [...prev, { 
-      id: Date.now().toString(), 
-      sender_type: 'client', 
-      content: novaMensagem.trim(), 
-      created_at: new Date().toISOString() 
-    }])
-    setNovaMensagem('')
-    setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
-  }
-
-  async function salvarAgendamento(e: React.FormEvent) {
-    e.preventDefault()
-    if (!user?.id || !profissionalAgendar) return
-
-    setSalvandoAgendamento(true)
-    try {
-      const [h, m] = horaAgendamento.split(':').map(Number)
-      const horaFim = `${String(h + 1).padStart(2, '0')}:${String(m).padStart(2, '0')}`
-
-      const { error } = await supabase.from('agendamentos').insert({
-        cliente_id: user.id,
-        profissional_id: profissionalAgendar.id,
-        data_agendamento: dataAgendamento,
-        hora_inicio: horaAgendamento,
-        hora_fim: horaFim,
-        endereco: enderecoAgendamento,
-        bairro: 'Centro',
-        cidade: profissionalAgendar.cidade || 'Porto Velho',
-        status: 'pendente',
-        valor_total: profissionalAgendar.preco_hora || 80
       })
 
-      if (error) {
-        console.error('Erro detalhado do Supabase:', error)
-        throw error
-      }
-      
-      alert('✅ Agendamento solicitado com sucesso!')
-      setModalAgendamento(false)
-      setEnderecoAgendamento('')
-    } catch (error: any) {
-      console.error('Erro ao agendar:', error)
-      alert(`❌ Erro ao agendar: ${error.message || 'Verifique os campos'}`)
+      setProfissionais(filtrados)
+    } catch (error) {
+      console.error('Erro ao buscar profissionais:', error)
     } finally {
-      setSalvandoAgendamento(false)
+      setLoadingProfissionais(false)
     }
   }
 
-  if (loading) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="animate-spin text-purple-600" /></div>
+  async function handleLogout() {
+    await supabase.auth.signOut()
+    router.push('/login')
+  }
 
-  const categoriaAtual = CATEGORIAS.find(c => c.id === categoriaSelecionada)
+  const servicos = [
+    {
+      id: 'Cabelo',
+      nome: 'Cabelo',
+      descricao: 'Corte, coloração, hidratação',
+      cor: 'from-yellow-400 to-orange-500',
+      bgIcon: 'bg-yellow-400',
+      textColor: 'text-yellow-400',
+      icon: Scissors,
+      preco: 'R$ 50'
+    },
+    {
+      id: 'Maquiagem',
+      nome: 'Maquiagem',
+      descricao: 'Social, festa e noiva',
+      cor: 'from-pink-400 to-rose-500',
+      bgIcon: 'bg-pink-400',
+      textColor: 'text-pink-400',
+      icon: Paintbrush,
+      preco: 'R$ 120'
+    },
+    {
+      id: 'Manicure',
+      nome: 'Manicure',
+      descricao: 'Esmaltação e nail art',
+      cor: 'from-red-400 to-pink-500',
+      bgIcon: 'bg-red-400',
+      textColor: 'text-red-400',
+      icon: Sparkles,
+      preco: 'R$ 35'
+    },
+    {
+      id: 'Pedicure',
+      nome: 'Pedicure',
+      descricao: 'Spa dos pés e cuidados',
+      cor: 'from-purple-400 to-violet-500',
+      bgIcon: 'bg-purple-400',
+      textColor: 'text-purple-400',
+      icon: Gem,
+      preco: 'R$ 40'
+    }
+  ]
+
+  const servicoAtual = servicos.find(s => s.id === servicoSelecionado)
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-900 md:bg-gray-50 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-yellow-400 md:border-pink-500"></div>
+      </div>
+    )
+  }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col text-gray-900">
-      {/* Header Fixo */}
-      <header className="bg-white border-b sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+    <div className="min-h-screen bg-slate-900 md:bg-gray-50">
+      {/* ===== MOBILE LAYOUT (< md) ===== */}
+      <div className="md:hidden flex flex-col min-h-screen pb-20">
+        <header className="p-6 flex items-center justify-between">
           <div>
-            <h1 className="text-xl font-bold bg-gradient-to-r from-purple-600 to-pink-500 bg-clip-text text-transparent">Beleza Connect</h1>
-            <p className="text-xs text-gray-500">Olá, {user?.email?.split('@')[0]}</p>
+            <h1 className="text-2xl font-bold text-white">Serviços</h1>
+            <p className="text-slate-400 text-sm">Escolha uma categoria</p>
           </div>
-          <button onClick={() => { supabase.auth.signOut(); router.push('/login') }} className="p-2 text-gray-400 hover:text-red-500"><LogOut /></button>
-        </div>
-      </header>
-
-      {/* Container Principal Responsivo */}
-      <div className="flex-1 flex flex-col md:flex-row max-w-7xl mx-auto w-full">
-        
-        {/* Sidebar / Menu de Categorias */}
-        <aside className={`w-full md:w-80 bg-white border-r flex flex-col ${categoriaSelecionada ? 'hidden md:flex' : 'flex'}`}>
-          <div className="p-4 border-b flex gap-2">
-            <button onClick={() => setAbaAtiva('servicos')} className={`flex-1 py-2 rounded-lg text-sm font-bold ${abaAtiva === 'servicos' ? 'bg-pink-100 text-pink-700' : 'bg-gray-100'}`}>Serviços</button>
-            <button onClick={() => setAbaAtiva('conversas')} className={`flex-1 py-2 rounded-lg text-sm font-bold ${abaAtiva === 'conversas' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100'}`}>Conversas</button>
+          <div className="flex items-center gap-3">
+            <button onClick={handleLogout} className="p-2 text-slate-400 hover:text-white">
+              <LogOut className="w-5 h-5" />
+            </button>
+            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center">
+              <span className="text-slate-900 font-bold text-sm">
+                {user?.email?.charAt(0).toUpperCase()}
+              </span>
+            </div>
           </div>
+        </header>
 
-          <div className="flex-1 overflow-y-auto p-4 space-y-3">
-            {abaAtiva === 'servicos' ? (
-              CATEGORIAS.map((cat) => (
+        {!servicoSelecionado ? (
+          <main className="flex-1 px-4 py-2">
+            <div className="grid grid-cols-2 gap-4">
+              {servicos.map((servico) => (
                 <button
-                  key={cat.id}
-                  onClick={() => setCategoriaSelecionada(cat.id)}
-                  className={`w-full flex items-center gap-4 p-4 rounded-2xl border-2 transition-all text-left ${categoriaSelecionada === cat.id ? 'border-pink-400 bg-pink-50' : 'border-gray-100 bg-white'}`}
+                  key={servico.id}
+                  onClick={() => setServicoSelecionado(servico.id)}
+                  className="aspect-square bg-slate-800 rounded-2xl p-4 flex flex-col items-center justify-center gap-3 active:scale-95 transition-transform border border-slate-700 hover:border-slate-600"
                 >
-                  <div className={`w-10 h-10 rounded-xl ${cat.bg} bg-opacity-20 flex items-center justify-center`}><cat.icone className={`w-5 h-5 ${cat.text}`} /></div>
-                  <div className="flex-1">
-                    <h3 className="font-bold text-sm text-gray-800">{cat.nome}</h3>
-                    <p className="text-xs text-gray-500">{cat.desc}</p>
+                  <div className={`w-16 h-16 rounded-2xl ${servico.bgIcon} bg-opacity-20 flex items-center justify-center`}>
+                    <servico.icon className={`w-8 h-8 ${servico.textColor}`} />
+                  </div>
+                  <div className="text-center">
+                    <h3 className="text-white font-bold text-lg">{servico.nome}</h3>
+                    <p className="text-slate-400 text-xs mt-1">Ver profissionais</p>
                   </div>
                 </button>
-              ))
-            ) : (
-              conversas.map((conv) => (
-                <div 
-                  key={conv.id} 
-                  onClick={() => abrirChatExistente(conv)} 
-                  className={`p-4 border rounded-xl cursor-pointer transition ${conv.unread_client ? 'bg-blue-50 border-blue-300' : 'hover:bg-gray-50'}`}
-                >
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <h4 className="font-bold text-sm text-gray-800">{conv.professional_nome}</h4>
-                      <p className="text-xs text-gray-500 truncate mt-1 max-w-[180px]">{conv.last_message || 'Clique para conversar'}</p>
-                    </div>
-                    {conv.unread_client && <span className="w-2 h-2 bg-blue-500 rounded-full mt-1"></span>}
+              ))}
+            </div>
+          </main>
+        ) : (
+          <main className="flex-1 px-4 py-2">
+            <button 
+              onClick={() => setServicoSelecionado(null)}
+              className="flex items-center gap-2 text-slate-400 hover:text-white mb-4"
+            >
+              <ArrowRight className="w-5 h-5 rotate-180" />
+              <span>Voltar</span>
+            </button>
+
+            {servicoAtual && (
+              <div className="bg-slate-800 rounded-2xl p-4 mb-6 border border-slate-700">
+                <div className="flex items-center gap-4">
+                  <div className={`w-14 h-14 rounded-xl ${servicoAtual.bgIcon} bg-opacity-20 flex items-center justify-center`}>
+                    <servicoAtual.icon className={`w-7 h-7 ${servicoAtual.textColor}`} />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-bold text-white">{servicoAtual.nome}</h2>
+                    <p className="text-slate-400 text-sm">
+                      {loadingProfissionais ? 'Carregando...' : `${profissionais.length} profissionais`}
+                    </p>
                   </div>
                 </div>
-              ))
-            )}
-          </div>
-        </aside>
-
-        {/* Conteúdo Principal */}
-        <main className={`flex-1 p-4 md:p-6 bg-gray-50 ${!categoriaSelecionada && abaAtiva === 'servicos' ? 'hidden md:block' : 'block'}`}>
-          {categoriaSelecionada ? (
-            <div className="max-w-4xl mx-auto">
-              <button onClick={() => setCategoriaSelecionada(null)} className="flex items-center gap-2 text-purple-600 mb-4 font-bold md:hidden"><ArrowLeft className="w-4 h-4" /> Voltar</button>
-              
-              <div className="flex items-center gap-4 mb-6">
-                 <div className={`w-12 h-12 rounded-xl ${categoriaAtual?.bg} bg-opacity-20 flex items-center justify-center`}>
-                    {categoriaAtual && <categoriaAtual.icone className={`w-6 h-6 ${categoriaAtual.text}`} />}
-                 </div>
-                 <div>
-                    <h2 className="text-xl font-bold text-gray-800">{categoriaAtual?.nome}</h2>
-                    <p className="text-sm text-gray-500">{profissionais.length} profissionais disponíveis</p>
-                 </div>
               </div>
+            )}
 
-              <div className="grid grid-cols-1 gap-4">
+            {loadingProfissionais ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="w-8 h-8 text-yellow-400 animate-spin" />
+              </div>
+            ) : profissionais.length === 0 ? (
+              <div className="text-center py-12 text-slate-400">
+                <p>Nenhum profissional disponível para esta categoria.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
                 {profissionais.map((prof) => (
-                  <div key={prof.id} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
-                    <div className="flex justify-between items-start mb-4">
-                      <div className="flex gap-3">
-                        <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center font-bold text-purple-600">{prof.nome[0]}</div>
-                        <div>
-                          <h3 className="font-bold text-gray-800">{prof.nome}</h3>
-                          <p className="text-xs text-gray-500 flex items-center gap-1"><MapPin className="w-3 h-3"/> {prof.cidade}</p>
+                  <div 
+                    key={prof.id}
+                    onClick={() => router.push(`/profissional/${prof.id}`)}
+                    className="bg-slate-800 rounded-2xl p-4 border border-slate-700 active:scale-95 transition-transform"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="relative">
+                        <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-pink-400 to-purple-600 flex items-center justify-center text-white font-bold text-xl">
+                          {prof.nome?.charAt(0).toUpperCase() || 'P'}
+                        </div>
+                        {prof.ativo && (
+                          <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-green-500 border-2 border-slate-800 rounded-full"></div>
+                        )}
+                      </div>
+                      <div className="flex-1">
+                        <h4 className="font-bold text-white">{prof.nome}</h4>
+                        <div className="flex items-center gap-1 text-sm text-slate-400">
+                          <Star className="w-3 h-3 text-yellow-400 fill-current" />
+                          <span>{prof.avaliacao || 5.0}</span>
+                          <span className="text-xs">({prof.cidade || 'Sem cidade'})</span>
                         </div>
                       </div>
-                      <div className="flex items-center gap-1 text-sm font-bold text-yellow-500"><Star className="w-4 h-4 fill-current"/> {prof.avaliacao || '5.0'}</div>
-                    </div>
-                    <div className="flex items-center justify-between pt-4 border-t">
-                      <span className="font-bold text-purple-600 text-lg">R$ {prof.preco_hora}<span className="text-xs text-gray-400 font-normal">/h</span></span>
-                      <div className="flex gap-2">
-                        <button onClick={() => abrirChat(prof)} className="p-2 border rounded-lg text-purple-600"><MessageCircle className="w-5 h-5"/></button>
-                        <button onClick={() => { setProfissionalAgendar(prof); setModalAgendamento(true); setDataAgendamento(new Date().toISOString().split('T')[0]) }} className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-bold">Agendar</button>
+                      <div className="text-right">
+                        <span className="block text-lg font-bold text-white">
+                          R$ {prof.preco_hora || '0'}
+                        </span>
+                        <button className="mt-1 px-3 py-1 bg-gradient-to-r from-yellow-400 to-orange-500 text-slate-900 text-xs font-bold rounded-lg">
+                          Agendar
+                        </button>
                       </div>
                     </div>
                   </div>
                 ))}
               </div>
+            )}
+          </main>
+        )}
+      </div>
+
+      {/* ===== DESKTOP LAYOUT (>= md) ===== */}
+      <div className="hidden md:flex h-screen">
+        <aside className="w-96 bg-white border-r border-gray-200 flex flex-col">
+          <div className="p-6 border-b border-gray-100">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h1 className="text-2xl font-bold text-gray-800">Serviços</h1>
+                <p className="text-sm text-gray-500">Escolha o serviço desejado</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button onClick={handleLogout} className="p-2 text-gray-400 hover:text-red-500">
+                  <LogOut className="w-5 h-5" />
+                </button>
+                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-pink-400 to-purple-600 flex items-center justify-center">
+                  <span className="text-white font-bold text-sm">
+                    {user?.email?.charAt(0).toUpperCase()}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            {servicos.map((servico) => (
+              <button
+                key={servico.id}
+                onClick={() => setServicoSelecionado(servico.id)}
+                className={`w-full text-left p-4 rounded-2xl border-2 transition-all ${
+                  servicoSelecionado === servico.id 
+                    ? 'border-pink-400 bg-pink-50' 
+                    : 'border-gray-100 bg-white hover:border-pink-200 hover:shadow-md'
+                }`}
+              >
+                <div className="flex items-center gap-4">
+                  <div className={`w-1 h-12 rounded-full bg-gradient-to-b ${servico.cor}`}></div>
+                  
+                  <div className={`w-12 h-12 rounded-xl ${servico.bgIcon} bg-opacity-10 flex items-center justify-center`}>
+                    <servico.icon className={`w-6 h-6 ${servico.textColor}`} />
+                  </div>
+                  
+                  <div className="flex-1">
+                    <h3 className={`font-bold text-lg ${servicoSelecionado === servico.id ? 'text-pink-600' : 'text-gray-800'}`}>
+                      {servico.nome}
+                    </h3>
+                    <p className="text-sm text-gray-500">{servico.descricao}</p>
+                  </div>
+
+                  <ChevronRight className={`w-5 h-5 ${servicoSelecionado === servico.id ? 'text-pink-400' : 'text-gray-300'}`} />
+                </div>
+              </button>
+            ))}
+          </div>
+        </aside>
+
+        <main className="flex-1 bg-gray-50 p-8 overflow-y-auto">
+          {!servicoSelecionado ? (
+            <div className="h-full flex flex-col items-center justify-center text-center">
+              <div className="w-24 h-24 bg-gray-200 rounded-full flex items-center justify-center mb-4">
+                <Scissors className="w-10 h-10 text-gray-400" />
+              </div>
+              <h2 className="text-2xl font-bold text-gray-700 mb-2">Escolha um serviço</h2>
+              <p className="text-gray-500 max-w-md">
+                Selecione uma categoria à esquerda para visualizar os profissionais disponíveis e agendar seu horário.
+              </p>
             </div>
           ) : (
-            <div className="h-full flex flex-col items-center justify-center text-center p-10">
-              <div className="w-20 h-20 bg-white rounded-full flex items-center justify-center shadow-sm mb-4"><Scissors className="w-8 h-8 text-gray-300" /></div>
-              <h2 className="text-lg font-bold text-gray-700">O que você precisa hoje?</h2>
-              <p className="text-sm text-gray-400">Selecione uma categoria ao lado para ver profissionais</p>
+            <div className="max-w-4xl">
+              {servicoAtual && (
+                <div className="mb-8">
+                  <div className="flex items-center gap-4 mb-6">
+                    <div className={`w-16 h-16 rounded-2xl ${servicoAtual.bgIcon} bg-opacity-10 flex items-center justify-center`}>
+                      <servicoAtual.icon className={`w-8 h-8 ${servicoAtual.textColor}`} />
+                    </div>
+                    <div>
+                      <h2 className="text-3xl font-bold text-gray-800">{servicoAtual.nome}</h2>
+                      <p className="text-gray-500">
+                        {loadingProfissionais ? 'Carregando...' : `${profissionais.length} profissionais disponíveis`}
+                      </p>
+                    </div>
+                  </div>
+
+                  {loadingProfissionais ? (
+                    <div className="flex items-center justify-center py-12">
+                      <Loader2 className="w-8 h-8 text-pink-500 animate-spin" />
+                    </div>
+                  ) : profissionais.length === 0 ? (
+                    <div className="text-center py-12 text-gray-500 bg-white rounded-2xl border border-gray-200">
+                      <p className="text-lg">Nenhum profissional disponível para esta categoria.</p>
+                      <p className="text-sm mt-2">Tente outra categoria ou volte mais tarde.</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                      {profissionais.map((prof) => (
+                        <div 
+                          key={prof.id}
+                          className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 hover:shadow-md transition-all cursor-pointer group"
+                          onClick={() => router.push(`/profissional/${prof.id}`)}
+                        >
+                          <div className="flex items-start gap-4">
+                            <div className="relative">
+                              <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-pink-400 to-purple-600 flex items-center justify-center text-white text-2xl font-bold">
+                                {prof.nome?.charAt(0).toUpperCase() || 'P'}
+                              </div>
+                              {prof.ativo && (
+                                <div className="absolute -bottom-2 -right-2 w-4 h-4 bg-green-500 border-2 border-white rounded-full"></div>
+                              )}
+                            </div>
+                            
+                            <div className="flex-1">
+                              <div className="flex items-start justify-between">
+                                <div>
+                                  <h3 className="font-bold text-xl text-gray-800 group-hover:text-pink-600 transition-colors">{prof.nome}</h3>
+                                  <div className="flex items-center gap-2 mt-1">
+                                    <Star className="w-4 h-4 text-yellow-400 fill-current" />
+                                    <span className="font-medium text-gray-700">{prof.avaliacao || 5.0}</span>
+                                  </div>
+                                </div>
+                                <span className="text-2xl font-bold text-gray-800">
+                                  R$ {prof.preco_hora || 0}
+                                </span>
+                              </div>
+                              
+                              <div className="flex items-center gap-4 mt-3 text-sm text-gray-500">
+                                <span className="flex items-center gap-1">
+                                  <MapPin className="w-4 h-4 text-green-500" />
+                                  {prof.cidade || 'Cidade não informada'}
+                                </span>
+                              </div>
+
+                              <button className="mt-4 w-full py-3 bg-gradient-to-r from-pink-500 to-purple-600 text-white font-semibold rounded-xl hover:opacity-90 transition-opacity">
+                                Agendar Horário
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </main>
       </div>
-
-      {/* MODAL AGENDAMENTO */}
-      {modalAgendamento && profissionalAgendar && (
-        <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/50 p-0 md:p-4 backdrop-blur-sm">
-          <div className="bg-white w-full max-w-md rounded-t-3xl md:rounded-2xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom duration-300">
-            <div className="bg-gradient-to-r from-purple-600 to-pink-500 p-6 text-white flex justify-between items-center">
-              <div>
-                <h3 className="font-bold text-lg">Agendar com {profissionalAgendar.nome}</h3>
-                <p className="text-xs opacity-80">{categoriaSelecionada}</p>
-              </div>
-              <button onClick={() => setModalAgendamento(false)} className="p-2 bg-white/20 rounded-full"><X className="w-5 h-5"/></button>
-            </div>
-
-            <form onSubmit={salvarAgendamento} className="p-6 space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Data</label>
-                <input type="date" required value={dataAgendamento} onChange={(e) => setDataAgendamento(e.target.value)}
-                  className="w-full p-3 border rounded-xl bg-white text-gray-900 font-medium focus:ring-2 focus:ring-purple-500 outline-none"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Horário</label>
-                <select value={horaAgendamento} onChange={(e) => setHoraAgendamento(e.target.value)}
-                  className="w-full p-3 border rounded-xl bg-white text-gray-900 font-medium focus:ring-2 focus:ring-purple-500 outline-none"
-                >
-                  {['08:00','09:00','10:00','11:00','13:00','14:00','15:00','16:00','17:00','18:00'].map(h => <option key={h} value={h}>{h}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Endereço</label>
-                <textarea required value={enderecoAgendamento} onChange={(e) => setEnderecoAgendamento(e.target.value)} placeholder="Rua, número, bairro..."
-                  className="w-full p-3 border rounded-xl bg-white text-gray-900 text-sm focus:ring-2 focus:ring-purple-500 outline-none h-24"
-                />
-              </div>
-              
-              <div className="bg-purple-50 p-4 rounded-2xl flex justify-between items-center">
-                <span className="text-sm text-gray-600">Valor total:</span>
-                <span className="text-xl font-bold text-purple-600">R$ {profissionalAgendar.preco_hora}</span>
-              </div>
-
-              <div className="flex gap-3 pt-2 pb-6 md:pb-0">
-                <button type="button" onClick={() => setModalAgendamento(false)} className="flex-1 py-3 border-2 rounded-xl font-bold text-gray-400">Cancelar</button>
-                <button type="submit" disabled={salvandoAgendamento} className="flex-1 py-3 bg-purple-600 text-white rounded-xl font-bold shadow-lg shadow-purple-200">
-                  {salvandoAgendamento ? 'Processando...' : 'Confirmar'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL CHAT - Agora com scroll automático e realtime */}
-      {chatAberto && conversaSelecionada && (
-        <div className="fixed inset-0 z-50 flex flex-col bg-white md:inset-auto md:right-4 md:bottom-4 md:w-96 md:h-[500px] md:rounded-2xl md:shadow-2xl overflow-hidden">
-          <div className="bg-purple-600 p-4 text-white flex justify-between items-center">
-            <div className="flex items-center gap-2">
-              <button onClick={() => setChatAberto(false)} className="md:hidden"><ArrowLeft /></button>
-              <span className="font-bold">{conversaSelecionada.professional_nome}</span>
-            </div>
-            <button onClick={() => setChatAberto(false)} className="hidden md:block"><X /></button>
-          </div>
-          <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50">
-            {mensagens.length === 0 ? (
-              <div className="h-full flex items-center justify-center text-gray-400 text-sm">
-                <p>Inicie a conversa...</p>
-              </div>
-            ) : (
-              mensagens.map((msg, i) => (
-                <div key={i} className={`flex ${msg.sender_type === 'client' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[80%] p-3 rounded-2xl text-sm ${msg.sender_type === 'client' ? 'bg-purple-600 text-white' : 'bg-white text-gray-800 border'}`}>
-                    <p>{msg.content}</p>
-                    <span className="text-xs opacity-70 mt-1 block">
-                      {new Date(msg.created_at).toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'})}
-                    </span>
-                  </div>
-                </div>
-              ))
-            )}
-            <div ref={messagesEndRef} />
-          </div>
-          <div className="p-4 border-t bg-white flex gap-2">
-            <input 
-              type="text" 
-              value={novaMensagem} 
-              onChange={(e) => setNovaMensagem(e.target.value)} 
-              onKeyPress={(e) => e.key === 'Enter' && enviarMensagem()} 
-              placeholder="Mensagem..." 
-              className="flex-1 p-2 border rounded-full text-gray-900 bg-gray-100 px-4 outline-none" 
-            />
-            <button onClick={enviarMensagem} disabled={!novaMensagem.trim()} className="p-2 bg-purple-600 text-white rounded-full disabled:opacity-50">
-              <Send className="w-5 h-5" />
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
