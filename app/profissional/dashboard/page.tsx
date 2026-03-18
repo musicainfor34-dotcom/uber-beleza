@@ -27,52 +27,43 @@ import ChatModal from './ChatModal'
 // Contexto de áudio global
 let audioContext: AudioContext | null = null
 
-// Função para inicializar o contexto de áudio (deve ser chamada após interação do usuário)
-const initAudioContext = () => {
-  if (!audioContext) {
-    audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
-  }
-  if (audioContext.state === 'suspended') {
-    audioContext.resume()
-  }
-}
-
-// Função para tocar som de notificação (beep)
-const playNotificationSound = () => {
+// Função para tocar som de notificação (beep) revisada
+const playNotificationSound = async () => {
   try {
-    initAudioContext()
-    
-    if (!audioContext) return
-    
-    const oscillator = audioContext.createOscillator()
-    const gainNode = audioContext.createGain()
-    
-    oscillator.connect(gainNode)
-    gainNode.connect(audioContext.destination)
-    
-    oscillator.frequency.value = 800
-    oscillator.type = 'sine'
-    
-    gainNode.gain.setValueAtTime(0.3, audioContext.currentTime)
-    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5)
-    
-    oscillator.start(audioContext.currentTime)
-    oscillator.stop(audioContext.currentTime + 0.5)
-    
-    // Segundo beep
-    setTimeout(() => {
-      if (!audioContext) return
-      const osc2 = audioContext.createOscillator()
-      const gain2 = audioContext.createGain()
-      osc2.connect(gain2)
-      gain2.connect(audioContext.destination)
-      osc2.frequency.value = 1000
-      osc2.type = 'sine'
-      gain2.gain.setValueAtTime(0.3, audioContext.currentTime)
-      gain2.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5)
-      osc2.start(audioContext.currentTime)
-      osc2.stop(audioContext.currentTime + 0.5)
-    }, 200)
+    // Cria o contexto apenas se necessário e dentro da função
+    if (!audioContext) {
+      audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
+    }
+
+    // Tenta retomar o contexto caso esteja suspenso (bloqueio do navegador)
+    if (audioContext.state === 'suspended') {
+      await audioContext.resume()
+    }
+
+    if (audioContext.state !== 'running') return
+
+    const playBeep = (freq: number, startTime: number) => {
+      const oscillator = audioContext!.createOscillator()
+      const gainNode = audioContext!.createGain()
+      
+      oscillator.connect(gainNode)
+      gainNode.connect(audioContext!.destination)
+      
+      oscillator.frequency.value = freq
+      oscillator.type = 'sine'
+      
+      gainNode.gain.setValueAtTime(0, startTime)
+      gainNode.gain.linearRampToValueAtTime(0.3, startTime + 0.1)
+      gainNode.gain.exponentialRampToValueAtTime(0.01, startTime + 0.5)
+      
+      oscillator.start(startTime)
+      oscillator.stop(startTime + 0.5)
+    }
+
+    // Toca dois beeps
+    const now = audioContext.currentTime
+    playBeep(800, now)
+    playBeep(1000, now + 0.2)
     
     console.log('🔊 Beep tocado!')
   } catch (e) {
@@ -137,13 +128,13 @@ export default function DashboardProfissional() {
     agendamentosPendentesRef.current = agendamentos.filter(ag => ag.status === 'pendente')
   }, [agendamentos])
   // Toca som quando agendamentos são carregados e há pendentes
-useEffect(() => {
-  const pendentes = agendamentos.filter(ag => ag.status === 'pendente')
-  if (pendentes.length > 0) {
-    console.log('🔔 Agendamentos carregados com pendentes:', pendentes.length)
-    playNotificationSound()
-  }
-}, [agendamentos])
+  useEffect(() => {
+    const pendentes = agendamentos.filter(ag => ag.status === 'pendente')
+    if (pendentes.length > 0) {
+      console.log('🔔 Agendamentos carregados com pendentes:', pendentes.length)
+      playNotificationSound()
+    }
+  }, [agendamentos])
 
 
   const [editForm, setEditForm] = useState({
@@ -157,46 +148,44 @@ useEffect(() => {
   useEffect(() => {
     checkUser()
   }, [])
+
   // Efeito para desbloquear áudio no primeiro clique do usuário
-useEffect(() => {
-  const handleFirstInteraction = () => {
-    initAudioContext()
-    console.log('🔓 Áudio desbloqueado pelo usuário')
-    document.removeEventListener('click', handleFirstInteraction)
-  }
-  
-  document.addEventListener('click', handleFirstInteraction)
-  
-  return () => {
-    document.removeEventListener('click', handleFirstInteraction)
-  }
-}, [])
-
-// Efeito para alerta sonoro de agendamentos pendentes (a cada 5 minutos)
-useEffect(() => {
-  // Função que verifica e toca o som
-  const verificarEAlertar = () => {
-    const pendentes = agendamentosPendentesRef.current
-    if (pendentes.length > 0) {
-      console.log(`🔔 Alerta: ${pendentes.length} agendamento(s) pendente(s)!`)
-      playNotificationSound()
+  useEffect(() => {
+    const handleFirstInteraction = () => {
+      if (!audioContext) {
+        audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
+      }
+      audioContext.resume().then(() => {
+        console.log('🔓 Áudio desbloqueado pelo usuário')
+        document.removeEventListener('click', handleFirstInteraction)
+      })
     }
-  }
+    document.addEventListener('click', handleFirstInteraction)
+    return () => document.removeEventListener('click', handleFirstInteraction)
+  }, [])
 
-  // Toca imediatamente se houver pendentes ao carregar a página
-  verificarEAlertar()
-
-  // Configura intervalo de 5 minutos (60000ms)
-  const interval = setInterval(verificarEAlertar, 60000)
-  setAlertaInterval(interval)
-
-  // Limpa o intervalo quando o componente desmontar
-  return () => {
-    if (interval) {
-      clearInterval(interval)
+  // Efeito para alerta sonoro REPETITIVO (1 em 1 minuto)
+  useEffect(() => {
+    const verificarEAlertar = () => {
+      const pendentes = agendamentosPendentesRef.current
+      if (pendentes.length > 0) {
+        console.log(`🔔 Alerta: ${pendentes.length} agendamento(s) pendente(s). Tocando alarme...`)
+        playNotificationSound()
+      }
     }
-  }
-}, []) // Array vazio - executa apenas ao montar o componente
+
+    // Executa a primeira vez após 2 segundos para dar tempo do app carregar
+    const timeoutInicial = setTimeout(verificarEAlertar, 2000)
+
+    // Configura intervalo de 1 minuto (60000ms)
+    const interval = setInterval(verificarEAlertar, 60000)
+    setAlertaInterval(interval)
+
+    return () => {
+      clearTimeout(timeoutInicial)
+      if (interval) clearInterval(interval)
+    }
+  }, []) // Executa apenas uma vez ao montar
 
 
 
