@@ -25,16 +25,24 @@ import {
 import ChatModal from './ChatModal'
 
 // Função para tocar som de notificação (beep)
+// Substitua a função playNotificationSound por esta:
 const playNotificationSound = () => {
   try {
+    // Cria o contexto de áudio (só funciona bem após interação do usuário)
     const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
+    
+    // Se o contexto estiver suspenso (autoplay policy), tenta resumir
+    if (audioContext.state === 'suspended') {
+      audioContext.resume()
+    }
+    
     const oscillator = audioContext.createOscillator()
     const gainNode = audioContext.createGain()
     
     oscillator.connect(gainNode)
     gainNode.connect(audioContext.destination)
     
-    oscillator.frequency.value = 800 // Frequência do beep
+    oscillator.frequency.value = 800
     oscillator.type = 'sine'
     
     gainNode.gain.setValueAtTime(0.3, audioContext.currentTime)
@@ -43,7 +51,7 @@ const playNotificationSound = () => {
     oscillator.start(audioContext.currentTime)
     oscillator.stop(audioContext.currentTime + 0.5)
     
-    // Toca um segundo beep após 200ms (efeito de alerta duplo)
+    // Segundo beep
     setTimeout(() => {
       const osc2 = audioContext.createOscillator()
       const gain2 = audioContext.createGain()
@@ -56,6 +64,8 @@ const playNotificationSound = () => {
       osc2.start(audioContext.currentTime)
       osc2.stop(audioContext.currentTime + 0.5)
     }, 200)
+    
+    console.log('🔊 Beep tocado!')
   } catch (e) {
     console.error('Erro ao tocar som:', e)
   }
@@ -117,6 +127,14 @@ export default function DashboardProfissional() {
   useEffect(() => {
     agendamentosPendentesRef.current = agendamentos.filter(ag => ag.status === 'pendente')
   }, [agendamentos])
+  // Toca som quando agendamentos são carregados e há pendentes
+useEffect(() => {
+  const pendentes = agendamentos.filter(ag => ag.status === 'pendente')
+  if (pendentes.length > 0) {
+    console.log('🔔 Agendamentos carregados com pendentes:', pendentes.length)
+    playNotificationSound()
+  }
+}, [agendamentos])
 
 
   const [editForm, setEditForm] = useState({
@@ -130,6 +148,34 @@ export default function DashboardProfissional() {
   useEffect(() => {
     checkUser()
   }, [])
+
+// Efeito para alerta sonoro de agendamentos pendentes (a cada 5 minutos)
+useEffect(() => {
+  // Função que verifica e toca o som
+  const verificarEAlertar = () => {
+    const pendentes = agendamentosPendentesRef.current
+    if (pendentes.length > 0) {
+      console.log(`🔔 Alerta: ${pendentes.length} agendamento(s) pendente(s)!`)
+      playNotificationSound()
+    }
+  }
+
+  // Toca imediatamente se houver pendentes ao carregar a página
+  verificarEAlertar()
+
+  // Configura intervalo de 5 minutos (300000ms)
+  const interval = setInterval(verificarEAlertar, 300000)
+  setAlertaInterval(interval)
+
+  // Limpa o intervalo quando o componente desmontar
+  return () => {
+    if (interval) {
+      clearInterval(interval)
+    }
+  }
+}, []) // Array vazio - executa apenas ao montar o componente
+
+
 
   useEffect(() => {
     if (user) {
