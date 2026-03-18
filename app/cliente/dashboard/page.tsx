@@ -1,29 +1,26 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@supabase/supabase-js'
 import { 
-  Calendar, 
-  Clock, 
-  LogOut, 
-  User, 
   Scissors, 
+  Paintbrush,
   Sparkles,
+  Gem,
   Star,
   MapPin,
-  MessageCircle,
-  Search,
-  ArrowRight,
-  Paintbrush,
-  Gem,
+  LogOut,
   ChevronRight,
-  Clock3,
+  Loader2,
+  MessageCircle,
   Send,
   X,
+  Calendar,
   ArrowLeft,
   Phone,
-  CalendarDays
+  DollarSign,
+  Check
 } from 'lucide-react'
 
 const supabase = createClient(
@@ -31,57 +28,81 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
-// Interfaces
-interface Agendamento {
+const CATEGORIAS = [
+  { id: 'Cabelo', nome: 'Cabelo', icone: Scissors, cor: 'from-yellow-400 to-orange-500', bg: 'bg-yellow-400', text: 'text-yellow-500', desc: 'Corte, coloração, hidratação' },
+  { id: 'Maquiagem', nome: 'Maquiagem', icone: Paintbrush, cor: 'from-pink-400 to-rose-500', bg: 'bg-pink-400', text: 'text-pink-500', desc: 'Social, festa e noiva' },
+  { id: 'Manicure', nome: 'Manicure', icone: Sparkles, cor: 'from-red-400 to-pink-500', bg: 'bg-red-400', text: 'text-red-500', desc: 'Esmaltação e nail art' },
+  { id: 'Pedicure', nome: 'Pedicure', icone: Gem, cor: 'from-purple-400 to-violet-500', bg: 'bg-purple-400', text: 'text-purple-500', desc: 'Spa dos pés e cuidados' }
+]
+
+interface Profissional {
   id: string
-  profissional_id: string
-  profissional_nome: string
-  profissional_foto: string
-  profissional_telefone: string
-  servico: string
-  data: string
-  horario: string
-  status: 'pendente' | 'confirmado' | 'concluido' | 'cancelado'
-  endereco?: string
-  preco: number
+  nome: string
+  email: string
+  telefone: string
+  cidade: string
+  preco_hora: number
+  avaliacao: number
+  especialidade: string[]
+  ativo: boolean
+}
+
+interface Conversa {
+  id: string
+  professional_id: string
+  professional_nome: string
+  last_message?: string
+  unread_client: boolean
+  updated_at: string
 }
 
 interface Mensagem {
   id: string
-  agendamento_id: string
-  remetente: 'cliente' | 'profissional'
-  texto: string
+  sender_type: 'client' | 'professional'
+  content: string
   created_at: string
-  lida: boolean
 }
 
 export default function ClienteDashboard() {
   const router = useRouter()
   const [user, setUser] = useState<any>(null)
   const [loading, setLoading] = useState(true)
-  const [abaAtiva, setAbaAtiva] = useState<'agendamentos' | 'novo' | 'perfil'>('agendamentos')
+  const [abaAtiva, setAbaAtiva] = useState<'servicos' | 'conversas'>('servicos')
+  const [categoriaSelecionada, setCategoriaSelecionada] = useState<string | null>(null)
+  const [profissionais, setProfissionais] = useState<Profissional[]>([])
+  const [loadingProfissionais, setLoadingProfissionais] = useState(false)
   
-  // Estados do Chat
+  // Chat
   const [chatAberto, setChatAberto] = useState(false)
-  const [agendamentoChat, setAgendamentoChat] = useState<Agendamento | null>(null)
+  const [conversaSelecionada, setConversaSelecionada] = useState<Conversa | null>(null)
   const [mensagens, setMensagens] = useState<Mensagem[]>([])
   const [novaMensagem, setNovaMensagem] = useState('')
-  const [agendamentos, setAgendamentos] = useState<Agendamento[]>([])
+  const [conversas, setConversas] = useState<Conversa[]>([])
   const messagesEndRef = useRef<HTMLDivElement>(null)
+
+  // Agendamento
+  const [modalAgendamento, setModalAgendamento] = useState(false)
+  const [profissionalAgendar, setProfissionalAgendar] = useState<Profissional | null>(null)
+  const [dataAgendamento, setDataAgendamento] = useState('')
+  const [horaAgendamento, setHoraAgendamento] = useState('09:00')
+  const [enderecoAgendamento, setEnderecoAgendamento] = useState('')
+  const [salvandoAgendamento, setSalvandoAgendamento] = useState(false)
 
   useEffect(() => {
     checkUser()
   }, [])
 
   useEffect(() => {
-    if (user) {
-      carregarAgendamentos()
+    if (user?.id && abaAtiva === 'conversas') {
+      carregarConversas()
     }
-  }, [user])
+  }, [user, abaAtiva])
 
   useEffect(() => {
-    scrollToBottom()
-  }, [mensagens])
+    if (categoriaSelecionada) {
+      buscarProfissionais(categoriaSelecionada)
+    }
+  }, [categoriaSelecionada])
 
   async function checkUser() {
     const { data: { session } } = await supabase.auth.getSession()
@@ -93,67 +114,228 @@ export default function ClienteDashboard() {
     setLoading(false)
   }
 
-  async function carregarAgendamentos() {
-    // Mock por enquanto - depois conecta com a tabela real
-    setAgendamentos([
-      {
-        id: '1',
-        profissional_id: 'uuid-1',
-        profissional_nome: 'Sandra Lima',
-        profissional_foto: 'https://images.unsplash.com/photo-1594744803329-e58b31de8bf5?w=200&h=200&fit=crop',
-        profissional_telefone: '(11) 98765-4321',
-        servico: 'Coloração e Corte',
-        data: 'Sex, 18 Mar',
-        horario: '14:00',
-        status: 'confirmado',
-        endereco: 'Av. Paulista, 1000 - São Paulo',
-        preco: 150
-      },
-      {
-        id: '2',
-        profissional_id: 'uuid-2',
-        profissional_nome: 'Helena Costa',
-        profissional_foto: 'https://images.unsplash.com/photo-1580618672591-eb180b1a973f?w=200&h=200&fit=crop',
-        profissional_telefone: '(11) 91234-5678',
-        servico: 'Maquiagem Social',
-        data: 'Sáb, 19 Mar',
-        horario: '10:00',
-        status: 'pendente',
-        preco: 120
+  // BUSCA CORRIGIDA DE PROFISSIONAIS
+  async function buscarProfissionais(categoria: string) {
+    setLoadingProfissionais(true)
+    try {
+      console.log('Buscando profissionais para:', categoria)
+      
+      // Tenta buscar usando contains (array)
+      const { data, error } = await supabase
+        .from('professionals')
+        .select('*')
+        .eq('ativo', true)
+        .contains('especialidade', [categoria])
+
+      if (error) {
+        console.error('Erro na busca:', error)
+        throw error
       }
-    ])
+
+      console.log('Profissionais encontrados:', data)
+
+      // Se não encontrou nada, tenta busca case-insensitive
+      if (!data || data.length === 0) {
+        console.log('Tentando busca alternativa...')
+        const { data: todos } = await supabase
+          .from('professionals')
+          .select('*')
+          .eq('ativo', true)
+        
+        const filtrados = (todos || []).filter((p: Profissional) => {
+          const especs = p.especialidade || []
+          return especs.some((e: string) => 
+            e.toLowerCase().includes(categoria.toLowerCase())
+          )
+        })
+        
+        console.log('Filtrados manualmente:', filtrados)
+        setProfissionais(filtrados)
+      } else {
+        setProfissionais(data)
+      }
+    } catch (error) {
+      console.error('Erro:', error)
+    } finally {
+      setLoadingProfissionais(false)
+    }
   }
 
-  async function abrirChat(agendamento: Agendamento) {
-    setAgendamentoChat(agendamento)
+  async function carregarConversas() {
+    if (!user?.id) return
+    setLoadingProfissionais(true) // reaproveita o loading
+    try {
+      const { data, error } = await supabase
+        .from('conversations')
+        .select('*')
+        .eq('client_id', user.id)
+        .order('updated_at', { ascending: false })
+
+      if (error) throw error
+
+      if (data) {
+        // Busca nomes dos profissionais
+        const profIds = data.map(c => c.professional_id)
+        const { data: profs } = await supabase
+          .from('professionals')
+          .select('id, nome')
+          .in('id', profIds)
+        
+        const profMap = (profs || []).reduce((acc, p) => {
+          acc[p.id] = p.nome
+          return acc
+        }, {} as any)
+
+        const conversasFormatadas = data.map((conv: any) => ({
+          id: conv.id,
+          professional_id: conv.professional_id,
+          professional_nome: profMap[conv.professional_id] || 'Profissional',
+          last_message: conv.last_message,
+          unread_client: conv.unread_client,
+          updated_at: conv.updated_at
+        }))
+        setConversas(conversasFormatadas)
+      }
+    } catch (error) {
+      console.error('Erro:', error)
+    }
+  }
+
+  async function abrirChat(profissional: Profissional) {
+    if (!user?.id) return
+
+    // Verifica se já existe conversa
+    const { data: existente } = await supabase
+      .from('conversations')
+      .select('*')
+      .eq('client_id', user.id)
+      .eq('professional_id', profissional.id)
+      .single()
+
+    let conversaId = existente?.id
+
+    // Se não existe, cria uma
+    if (!existente) {
+      const { data: nova, error } = await supabase
+        .from('conversations')
+        .insert({
+          client_id: user.id,
+          professional_id: profissional.id,
+          client_email: user.email,
+          professional_email: profissional.email,
+          unread_client: false,
+          unread_professional: false
+        })
+        .select()
+        .single()
+      
+      if (error) {
+        console.error('Erro criando conversa:', error)
+        return
+      }
+      conversaId = nova.id
+    }
+
+    // Busca mensagens
+    const { data: msgs } = await supabase
+      .from('messages')
+      .select('*')
+      .eq('conversation_id', conversaId)
+      .order('created_at', { ascending: true })
+
+    setConversaSelecionada({
+      id: conversaId,
+      professional_id: profissional.id,
+      professional_nome: profissional.nome,
+      last_message: '',
+      unread_client: false,
+      updated_at: new Date().toISOString()
+    })
+    
+    setMensagens(msgs || [])
     setChatAberto(true)
-    // Carregar mensagens do Supabase aqui depois
-    setMensagens([])
+    
+    // Marca como lida
+    await supabase.from('conversations').update({ unread_client: false }).eq('id', conversaId)
   }
 
   async function enviarMensagem() {
-    if (!novaMensagem.trim() || !agendamentoChat) return
+    if (!novaMensagem.trim() || !conversaSelecionada || !user?.id) return
 
-    // Criar mensagem temporária para exibição imediata (TIPADA corretamente)
-    const mensagemTemp: Mensagem = {
-      id: Date.now().toString(),
-      agendamento_id: agendamentoChat.id,
-      remetente: 'cliente', // Agora é literal 'cliente', não string genérica
-      texto: novaMensagem,
-      created_at: new Date().toISOString(),
-      lida: true
+    const { error } = await supabase.from('messages').insert({
+      conversation_id: conversaSelecionada.id,
+      sender_id: user.id,
+      sender_type: 'client',
+      content: novaMensagem.trim(),
+      read: false
+    })
+
+    if (error) {
+      console.error('Erro:', error)
+      return
     }
 
-    // Salvar no Supabase (aqui você implementa depois)
-    // await supabase.from('mensagens').insert({...})
+    await supabase.from('conversations').update({ 
+      last_message: novaMensagem.trim(),
+      updated_at: new Date().toISOString(),
+      unread_professional: true 
+    }).eq('id', conversaSelecionada.id)
 
-    setMensagens(prev => [...prev, mensagemTemp])
+    setMensagens(prev => [...prev, {
+      id: Date.now().toString(),
+      sender_type: 'client',
+      content: novaMensagem.trim(),
+      created_at: new Date().toISOString()
+    }])
+    
     setNovaMensagem('')
-    scrollToBottom()
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }
 
-  function scrollToBottom() {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  function abrirModalAgendamento(prof: Profissional) {
+    setProfissionalAgendar(prof)
+    setModalAgendamento(true)
+    setDataAgendamento(new Date().toISOString().split('T')[0])
+  }
+
+  async function salvarAgendamento(e: React.FormEvent) {
+    e.preventDefault()
+    if (!user?.id || !profissionalAgendar) return
+
+    setSalvandoAgendamento(true)
+    try {
+      const { error } = await supabase.from('agendamentos').insert({
+        cliente_id: user.id,
+        profissional_id: profissionalAgendar.id,
+        data_agendamento: dataAgendamento,
+        hora_inicio: horaAgendamento,
+        hora_fim: calcularHoraFim(horaAgendamento, 60),
+        endereco: enderecoAgendamento || 'A combinar',
+        bairro: 'Centro',
+        cidade: profissionalAgendar.cidade || 'Porto Velho',
+        status: 'pendente',
+        valor_total: profissionalAgendar.preco_hora || 80,
+        servico_id: 'servico-padrao'
+      })
+
+      if (error) throw error
+      
+      alert('✅ Agendamento solicitado! O profissional irá confirmar.')
+      setModalAgendamento(false)
+      setEnderecoAgendamento('')
+    } catch (error) {
+      console.error('Erro:', error)
+      alert('❌ Erro ao agendar. Tente novamente.')
+    } finally {
+      setSalvandoAgendamento(false)
+    }
+  }
+
+  function calcularHoraFim(hora: string, minutos: number) {
+    const [h, m] = hora.split(':').map(Number)
+    const data = new Date()
+    data.setHours(h, m + minutos)
+    return `${String(data.getHours()).padStart(2, '0')}:${String(data.getMinutes()).padStart(2, '0')}`
   }
 
   async function handleLogout() {
@@ -164,269 +346,309 @@ export default function ClienteDashboard() {
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-pink-500"></div>
+        <Loader2 className="w-8 h-8 animate-spin text-purple-600" />
       </div>
     )
   }
 
+  const categoriaAtual = CATEGORIAS.find(c => c.id === categoriaSelecionada)
+
   return (
-    <div className="min-h-screen bg-gray-50 pb-24">
-      {/* Header */}
-      <header className="sticky top-0 z-40 bg-white shadow-sm border-b border-gray-100">
-        <div className="max-w-3xl mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-800">
-                {abaAtiva === 'agendamentos' ? 'Meus Agendamentos' : 'Novo Agendamento'}
-              </h1>
-              <p className="text-sm text-gray-500">
-                {abaAtiva === 'agendamentos' 
-                  ? 'Gerencie seus horários marcados' 
-                  : 'Escolha um serviço'}
-              </p>
-            </div>
-            <div className="flex items-center gap-3">
-              <button 
-                onClick={handleLogout}
-                className="p-2 text-gray-400 hover:text-red-500"
-              >
-                <LogOut className="w-5 h-5" />
-              </button>
-              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-pink-400 to-purple-600 flex items-center justify-center">
-                <span className="text-white font-bold text-sm">
-                  {user?.email?.charAt(0).toUpperCase()}
-                </span>
-              </div>
+    <div className="min-h-screen bg-gray-50">
+      {/* Header Desktop */}
+      <header className="bg-white border-b border-gray-200 sticky top-0 z-30">
+        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Beleza Connect</h1>
+            <p className="text-sm text-gray-500">Olá, {user?.email?.split('@')[0]}</p>
+          </div>
+          <div className="flex items-center gap-3">
+            <button 
+              onClick={handleLogout}
+              className="p-2 text-gray-400 hover:text-red-500 transition-colors"
+            >
+              <LogOut className="w-6 h-6" />
+            </button>
+            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white font-bold">
+              {user?.email?.charAt(0).toUpperCase()}
             </div>
           </div>
         </div>
       </header>
 
-      <main className="max-w-3xl mx-auto px-4 py-6">
-        {/* ABA: MEUS AGENDAMENTOS */}
-        {abaAtiva === 'agendamentos' && (
-          <div className="space-y-4">
-            {agendamentos.map((agend) => (
-              <div key={agend.id} className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-                {/* Header do Card */}
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-center gap-3">
-                    <img 
-                      src={agend.profissional_foto} 
-                      alt={agend.profissional_nome}
-                      className="w-14 h-14 rounded-2xl object-cover"
-                    />
-                    <div>
-                      <h3 className="font-bold text-gray-800 text-lg">{agend.profissional_nome}</h3>
-                      <p className="text-pink-600 text-sm font-medium">{agend.servico}</p>
+      <div className="max-w-7xl mx-auto flex min-h-[calc(100vh-80px)]">
+        {/* Sidebar */}
+        <aside className="w-80 bg-white border-r border-gray-200 flex flex-col">
+          <div className="p-4 border-b border-gray-100">
+            <div className="flex gap-2">
+              <button
+                onClick={() => {setAbaAtiva('servicos'); setCategoriaSelecionada(null)}}
+                className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition ${
+                  abaAtiva === 'servicos' 
+                    ? 'bg-pink-100 text-pink-700' 
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                Serviços
+              </button>
+              <button
+                onClick={() => setAbaAtiva('conversas')}
+                className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition ${
+                  abaAtiva === 'conversas' 
+                    ? 'bg-blue-100 text-blue-700' 
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                Conversas
+              </button>
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-4">
+            {abaAtiva === 'servicos' ? (
+              <div className="space-y-3">
+                {CATEGORIAS.map((cat) => (
+                  <button
+                    key={cat.id}
+                    onClick={() => setCategoriaSelecionada(cat.id)}
+                    className={`w-full flex items-center gap-4 p-4 rounded-2xl border-2 transition-all text-left ${
+                      categoriaSelecionada === cat.id 
+                        ? 'border-pink-400 bg-pink-50' 
+                        : 'border-gray-100 bg-white hover:border-pink-200 hover:shadow-md'
+                    }`}
+                  >
+                    <div className={`w-12 h-12 rounded-xl ${cat.bg} bg-opacity-20 flex items-center justify-center`}>
+                      <cat.icone className={`w-6 h-6 ${cat.text}`} />
                     </div>
-                  </div>
-                  <div className={`px-3 py-1 rounded-full text-xs font-bold ${
-                    agend.status === 'confirmado' 
-                      ? 'bg-green-100 text-green-700' 
-                      : agend.status === 'pendente'
-                      ? 'bg-yellow-100 text-yellow-700'
-                      : 'bg-gray-100 text-gray-700'
-                  }`}>
-                    {agend.status === 'confirmado' ? 'Confirmado' : 'Pendente'}
-                  </div>
-                </div>
-
-                {/* Detalhes */}
-                <div className="flex items-center gap-4 text-sm text-gray-600 mb-4 bg-gray-50 p-3 rounded-xl">
-                  <div className="flex items-center gap-2">
-                    <CalendarDays className="w-4 h-4 text-pink-500" />
-                    <span className="font-medium">{agend.data}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Clock className="w-4 h-4 text-pink-500" />
-                    <span className="font-medium">{agend.horario}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <MapPin className="w-4 h-4 text-pink-500" />
-                    <span className="truncate">{agend.endereco || 'A definir'}</span>
-                  </div>
-                </div>
-
-                {/* Ações */}
-                <div className="flex gap-3">
-                  <button 
-                    onClick={() => abrirChat(agend)}
-                    className="flex-1 flex items-center justify-center gap-2 py-3 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl font-semibold shadow-md hover:shadow-lg transition active:scale-95"
-                  >
-                    <MessageCircle className="w-5 h-5" />
-                    Conversar
+                    <div className="flex-1">
+                      <h3 className={`font-bold ${categoriaSelecionada === cat.id ? 'text-pink-700' : 'text-gray-800'}`}>
+                        {cat.nome}
+                      </h3>
+                      <p className="text-xs text-gray-500">{cat.desc}</p>
+                    </div>
+                    <ChevronRight className={`w-5 h-5 ${categoriaSelecionada === cat.id ? 'text-pink-400' : 'text-gray-300'}`} />
                   </button>
-                  
-                  <button 
-                    onClick={() => window.open(`https://wa.me/55${agend.profissional_telefone.replace(/\D/g, '')}`, '_blank')}
-                    className="flex items-center justify-center gap-2 px-4 py-3 bg-green-500 text-white rounded-xl font-semibold shadow-md hover:shadow-lg transition active:scale-95"
-                  >
-                    <Phone className="w-5 h-5" />
-                  </button>
-
-                  <button 
-                    onClick={() => router.push(`/agendamento/${agend.id}`)}
-                    className="flex items-center justify-center gap-2 px-4 py-3 bg-gray-100 text-gray-700 rounded-xl font-semibold hover:bg-gray-200 transition"
-                  >
-                    <ChevronRight className="w-5 h-5" />
-                  </button>
-                </div>
+                ))}
               </div>
-            ))}
-
-            {agendamentos.length === 0 && (
-              <div className="text-center py-12">
-                <Calendar className="w-16 h-16 mx-auto mb-4 text-gray-300" />
-                <h3 className="text-lg font-bold text-gray-600 mb-2">Nenhum agendamento</h3>
-                <p className="text-gray-500 mb-6">Você ainda não tem horários marcados</p>
-                <button 
-                  onClick={() => setAbaAtiva('novo')}
-                  className="px-6 py-3 bg-gradient-to-r from-pink-500 to-purple-600 text-white rounded-xl font-bold"
-                >
-                  Agendar Agora
-                </button>
+            ) : (
+              <div className="space-y-3">
+                {conversas.length === 0 ? (
+                  <div className="text-center py-8 text-gray-400">
+                    <MessageCircle className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                    <p className="text-sm">Nenhuma conversa ainda</p>
+                  </div>
+                ) : (
+                  conversas.map((conv) => (
+                    <div 
+                      key={conv.id}
+                      onClick={() => {
+                        setConversaSelecionada(conv)
+                        setChatAberto(true)
+                      }}
+                      className={`p-4 rounded-2xl border cursor-pointer transition ${
+                        conv.unread_client 
+                          ? 'border-blue-300 bg-blue-50' 
+                          : 'border-gray-200 bg-white hover:shadow-md'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white font-bold">
+                          {conv.professional_nome.charAt(0)}
+                        </div>
+                        <div className="flex-1">
+                          <h4 className="font-bold text-sm text-gray-800">{conv.professional_nome}</h4>
+                          <p className="text-xs text-gray-500 truncate">{conv.last_message || 'Clique para conversar'}</p>
+                        </div>
+                        {conv.unread_client && <span className="w-2 h-2 bg-blue-500 rounded-full"></span>}
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             )}
           </div>
-        )}
+        </aside>
 
-        {/* ABA: NOVO AGENDAMENTO */}
-        {abaAtiva === 'novo' && (
-          <div className="grid grid-cols-2 gap-4">
-            {[
-              { nome: 'Cabelo', icon: Scissors, cor: 'from-yellow-400 to-orange-500' },
-              { nome: 'Maquiagem', icon: Paintbrush, cor: 'from-pink-400 to-rose-500' },
-              { nome: 'Manicure', icon: Sparkles, cor: 'from-red-400 to-pink-500' },
-              { nome: 'Pedicure', icon: Gem, cor: 'from-purple-400 to-violet-500' },
-            ].map((servico) => (
-              <button
-                key={servico.nome}
-                onClick={() => router.push(`/servico/${servico.nome.toLowerCase()}`)}
-                className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition text-center"
-              >
-                <div className={`w-14 h-14 mx-auto rounded-2xl bg-gradient-to-br ${servico.cor} flex items-center justify-center mb-3`}>
-                  <servico.icon className="w-7 h-7 text-white" />
+        {/* Main Content */}
+        <main className="flex-1 p-6 overflow-y-auto bg-gray-50">
+          {abaAtiva === 'servicos' ? (
+            !categoriaSelecionada ? (
+              <div className="h-full flex flex-col items-center justify-center text-gray-400">
+                <div className="w-20 h-20 bg-gray-200 rounded-full flex items-center justify-center mb-4">
+                  <Scissors className="w-8 h-8 text-gray-400" />
                 </div>
-                <h3 className="font-bold text-gray-800">{servico.nome}</h3>
-                <p className="text-xs text-gray-500 mt-1">Ver profissionais</p>
-              </button>
-            ))}
-          </div>
-        )}
-      </main>
+                <h2 className="text-xl font-bold text-gray-700 mb-2">Escolha um serviço</h2>
+                <p className="text-center max-w-md">Selecione uma categoria à esquerda para ver os profissionais disponíveis.</p>
+              </div>
+            ) : (
+              <div>
+                {/* Header da Categoria */}
+                <div className="flex items-center gap-4 mb-6">
+                  <button 
+                    onClick={() => setCategoriaSelecionada(null)}
+                    className="p-2 hover:bg-white rounded-lg transition"
+                  >
+                    <ArrowLeft className="w-5 h-5" />
+                  </button>
+                  {categoriaAtual && (
+                    <div className="flex items-center gap-3">
+                      <div className={`w-12 h-12 rounded-xl ${categoriaAtual.bg} bg-opacity-20 flex items-center justify-center`}>
+                        <categoriaAtual.icone className={`w-6 h-6 ${categoriaAtual.text}`} />
+                      </div>
+                      <div>
+                        <h2 className="text-2xl font-bold text-gray-800">{categoriaAtual.nome}</h2>
+                        <p className="text-gray-500">
+                          {loadingProfissionais ? 'Carregando...' : `${profissionais.length} profissionais encontrados`}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
 
-      {/* MODAL DE CHAT */}
-      {chatAberto && agendamentoChat && (
-        <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center sm:p-4">
-          <div className="bg-white w-full max-w-md h-[90vh] sm:h-[650px] sm:rounded-3xl rounded-t-3xl shadow-2xl flex flex-col overflow-hidden animate-slide-up">
-            
-            {/* Header */}
-            <div className="bg-gradient-to-r from-blue-500 to-blue-600 text-white px-4 py-4 flex items-center justify-between shadow-md">
+                {/* Lista de Profissionais */}
+                {loadingProfissionais ? (
+                  <div className="flex items-center justify-center py-12">
+                    <Loader2 className="w-8 h-8 animate-spin text-purple-600" />
+                  </div>
+                ) : profissionais.length === 0 ? (
+                  <div className="bg-white rounded-2xl p-12 text-center border border-gray-200">
+                    <div className="text-6xl mb-4">🔍</div>
+                    <h3 className="text-lg font-bold text-gray-700 mb-2">Nenhum profissional encontrado</h3>
+                    <p className="text-gray-500 mb-4">Não encontramos profissionais para {categoriaAtual?.nome} no momento.</p>
+                    <button 
+                      onClick={() => setCategoriaSelecionada(null)}
+                      className="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+                    >
+                      Ver outras categorias
+                    </button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    {profissionais.map((prof) => (
+                      <div key={prof.id} className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 hover:shadow-md transition">
+                        <div className="flex items-start gap-4">
+                          <div className="w-16 h-16 rounded-full bg-gradient-to-br from-purple-400 to-pink-500 flex items-center justify-center text-white text-xl font-bold">
+                            {prof.nome?.charAt(0).toUpperCase() || 'P'}
+                          </div>
+                          <div className="flex-1">
+                            <div className="flex items-start justify-between mb-1">
+                              <div>
+                                <h3 className="font-bold text-lg text-gray-800">{prof.nome}</h3>
+                                <div className="flex items-center gap-1 text-sm text-gray-500">
+                                  <MapPin className="w-4 h-4" />
+                                  {prof.cidade || 'Porto Velho'}
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <div className="flex items-center gap-1 text-sm">
+                                  <Star className="w-4 h-4 text-yellow-400 fill-current" />
+                                  <span className="font-medium">{prof.avaliacao || 5.0}</span>
+                                </div>
+                              </div>
+                            </div>
+                            
+                            <div className="flex flex-wrap gap-2 my-3">
+                              {prof.especialidade?.map((esp, idx) => (
+                                <span key={idx} className="bg-gray-100 text-gray-600 text-xs px-2 py-1 rounded-full">
+                                  {esp}
+                                </span>
+                              ))}
+                            </div>
+
+                            <div className="flex items-center justify-between pt-3 border-t border-gray-100">
+                              <div>
+                                <span className="text-2xl font-bold text-purple-600">R$ {prof.preco_hora || 0}</span>
+                                <span className="text-sm text-gray-400">/hora</span>
+                              </div>
+                              <div className="flex gap-2">
+                                <button 
+                                  onClick={() => abrirChat(prof)}
+                                  className="px-4 py-2 border-2 border-purple-200 text-purple-600 rounded-lg hover:bg-purple-50 font-medium text-sm flex items-center gap-2"
+                                >
+                                  <MessageCircle className="w-4 h-4" />
+                                  Conversar
+                                </button>
+                                <button 
+                                  onClick={() => abrirModalAgendamento(prof)}
+                                  className="px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-500 text-white rounded-lg hover:opacity-90 font-medium text-sm flex items-center gap-2"
+                                >
+                                  <Calendar className="w-4 h-4" />
+                                  Agendar
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          ) : (
+            <div className="h-full flex flex-col items-center justify-center text-gray-400">
+              <MessageCircle className="w-16 h-16 mb-4 opacity-30" />
+              <h2 className="text-2xl font-bold text-gray-700 mb-2">Suas Conversas</h2>
+              <p>Selecione uma conversa à esquerda para começar.</p>
+            </div>
+          )}
+        </main>
+      </div>
+
+      {/* Modal de Chat */}
+      {chatAberto && conversaSelecionada && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white w-full max-w-lg h-[600px] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+            <div className="bg-gradient-to-r from-purple-600 to-pink-500 text-white px-4 py-4 flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <button 
-                  onClick={() => setChatAberto(false)}
-                  className="p-1 hover:bg-white/20 rounded-full transition"
-                >
+                <button onClick={() => setChatAberto(false)} className="p-1 hover:bg-white/20 rounded">
                   <ArrowLeft className="w-6 h-6" />
                 </button>
-                
-                <div className="relative">
-                  <img 
-                    src={agendamentoChat.profissional_foto} 
-                    alt={agendamentoChat.profissional_nome}
-                    className="w-10 h-10 rounded-full border-2 border-white object-cover"
-                  />
-                  <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-400 border-2 border-white rounded-full"></div>
+                <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center font-bold">
+                  {conversaSelecionada.professional_nome.charAt(0)}
                 </div>
-                
                 <div>
-                  <h3 className="font-bold text-sm">{agendamentoChat.profissional_nome}</h3>
-                  <p className="text-xs opacity-90 flex items-center gap-1">
-                    <span className="w-2 h-2 bg-green-400 rounded-full"></span>
-                    Online • {agendamentoChat.servico}
-                  </p>
+                  <h3 className="font-bold">{conversaSelecionada.professional_nome}</h3>
+                  <p className="text-xs opacity-90">Online</p>
                 </div>
               </div>
-              
-              <button 
-                onClick={() => setChatAberto(false)}
-                className="p-2 hover:bg-white/20 rounded-full transition"
-              >
+              <button onClick={() => setChatAberto(false)} className="p-2 hover:bg-white/20 rounded-full">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Info do Agendamento */}
-            <div className="bg-blue-50 px-4 py-3 border-b border-blue-100 flex items-center justify-between">
-              <div className="flex items-center gap-2 text-sm text-blue-800">
-                <Calendar className="w-4 h-4" />
-                <span className="font-medium">{agendamentoChat.data} às {agendamentoChat.horario}</span>
-              </div>
-              <span className={`text-xs px-2 py-1 rounded-full font-medium ${
-                agendamentoChat.status === 'confirmado' 
-                  ? 'bg-green-100 text-green-700' 
-                  : 'bg-yellow-100 text-yellow-700'
-              }`}>
-                {agendamentoChat.status}
-              </span>
-            </div>
-
-            {/* Mensagens */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-100">
-              <div className="text-center text-xs text-gray-400 my-4">Hoje</div>
-              
-              <div className="text-center text-xs text-gray-500 bg-white/50 py-2 px-4 rounded-full mx-auto w-fit">
-                Agendamento confirmado! Você pode conversar com {agendamentoChat.profissional_nome.split(' ')[0]} aqui.
-              </div>
-
-              {mensagens.map((msg) => (
-                <div 
-                  key={msg.id}
-                  className={`flex ${msg.remetente === 'cliente' ? 'justify-end' : 'justify-start'}`}
-                >
-                  <div 
-                    className={`max-w-[75%] px-4 py-3 rounded-2xl shadow-sm ${
-                      msg.remetente === 'cliente' 
-                        ? 'bg-blue-500 text-white rounded-br-md'
-                        : 'bg-white text-gray-800 rounded-bl-md'
-                    }`}
-                  >
-                    <p className="text-sm leading-relaxed">{msg.texto}</p>
-                    <div className={`flex items-center gap-1 mt-1 text-xs ${
-                      msg.remetente === 'cliente' ? 'text-blue-100' : 'text-gray-400'
-                    }`}>
-                      <span>{new Date(msg.created_at).toLocaleTimeString('pt-BR', { 
-                        hour: '2-digit', 
-                        minute: '2-digit' 
-                      })}</span>
-                      {msg.remetente === 'cliente' && <span className="ml-1">✓✓</span>}
-                    </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50">
+              {mensagens.map((msg, idx) => (
+                <div key={idx} className={`flex ${msg.sender_type === 'client' ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`max-w-[70%] px-4 py-2 rounded-2xl ${
+                    msg.sender_type === 'client' 
+                      ? 'bg-purple-600 text-white rounded-br-md' 
+                      : 'bg-white text-gray-800 rounded-bl-md border border-gray-200'
+                  }`}>
+                    <p className="text-sm">{msg.content}</p>
+                    <span className="text-xs opacity-70 mt-1 block">
+                      {new Date(msg.created_at).toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'})}
+                    </span>
                   </div>
                 </div>
               ))}
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Input */}
-            <div className="p-3 bg-white border-t border-gray-200">
-              <div className="flex items-center gap-2 bg-gray-100 rounded-full px-4 py-2">
+            <div className="p-4 bg-white border-t border-gray-200">
+              <div className="flex gap-2">
                 <input
                   type="text"
                   value={novaMensagem}
                   onChange={(e) => setNovaMensagem(e.target.value)}
                   onKeyPress={(e) => e.key === 'Enter' && enviarMensagem()}
-                  placeholder="Mensagem..."
-                  className="flex-1 bg-transparent focus:outline-none text-gray-800 placeholder-gray-500"
+                  placeholder="Digite sua mensagem..."
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-full focus:outline-none focus:border-purple-500"
                 />
                 <button 
                   onClick={enviarMensagem}
                   disabled={!novaMensagem.trim()}
-                  className={`p-2 rounded-full transition ${
-                    novaMensagem.trim() 
-                      ? 'bg-blue-500 text-white' 
-                      : 'bg-gray-300 text-gray-500'
-                  }`}
+                  className="p-2 bg-purple-600 text-white rounded-full hover:bg-purple-700 disabled:opacity-50"
                 >
                   <Send className="w-5 h-5" />
                 </button>
@@ -436,40 +658,81 @@ export default function ClienteDashboard() {
         </div>
       )}
 
-      {/* Bottom Navigation */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-4 max-w-md mx-auto z-40">
-        <div className="flex justify-around items-center">
-          <button 
-            onClick={() => setAbaAtiva('agendamentos')}
-            className={`flex flex-col items-center gap-1 ${abaAtiva === 'agendamentos' ? 'text-blue-500' : 'text-gray-400'}`}
-          >
-            <div className={`p-2 rounded-xl ${abaAtiva === 'agendamentos' ? 'bg-blue-50' : ''}`}>
-              <Calendar className="w-5 h-5" />
+      {/* Modal de Agendamento */}
+      {modalAgendamento && profissionalAgendar && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden">
+            <div className="bg-gradient-to-r from-purple-600 to-pink-500 text-white px-6 py-4 flex items-center justify-between">
+              <div>
+                <h3 className="font-bold text-lg">Agendar com {profissionalAgendar.nome}</h3>
+                <p className="text-sm opacity-90">{categoriaAtual?.nome}</p>
+              </div>
+              <button onClick={() => setModalAgendamento(false)} className="p-2 hover:bg-white/20 rounded-full">
+                <X className="w-5 h-5" />
+              </button>
             </div>
-            <span className="text-xs font-medium">Agendamentos</span>
-          </button>
-          
-          <button 
-            onClick={() => setAbaAtiva('novo')}
-            className={`flex flex-col items-center gap-1 ${abaAtiva === 'novo' ? 'text-blue-500' : 'text-gray-400'}`}
-          >
-            <div className={`p-2 rounded-xl ${abaAtiva === 'novo' ? 'bg-blue-50' : ''}`}>
-              <Search className="w-5 h-5" />
-            </div>
-            <span className="text-xs font-medium">Novo</span>
-          </button>
-          
-          <button 
-            onClick={() => setAbaAtiva('perfil')}
-            className={`flex flex-col items-center gap-1 ${abaAtiva === 'perfil' ? 'text-blue-500' : 'text-gray-400'}`}
-          >
-            <div className={`p-2 rounded-xl ${abaAtiva === 'perfil' ? 'bg-blue-50' : ''}`}>
-              <User className="w-5 h-5" />
-            </div>
-            <span className="text-xs font-medium">Perfil</span>
-          </button>
+
+            <form onSubmit={salvarAgendamento} className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Data</label>
+                <input 
+                  type="date" 
+                  required
+                  value={dataAgendamento}
+                  onChange={(e) => setDataAgendamento(e.target.value)}
+                  min={new Date().toISOString().split('T')[0]}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Horário</label>
+                <select 
+                  value={horaAgendamento}
+                  onChange={(e) => setHoraAgendamento(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500"
+                >
+                  {['08:00','09:00','10:00','11:00','13:00','14:00','15:00','16:00','17:00'].map(h => (
+                    <option key={h} value={h}>{h}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Endereço</label>
+                <textarea 
+                  value={enderecoAgendamento}
+                  onChange={(e) => setEnderecoAgendamento(e.target.value)}
+                  placeholder="Seu endereço completo"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 h-20 resize-none"
+                />
+              </div>
+
+              <div className="bg-purple-50 p-4 rounded-xl flex items-center justify-between">
+                <span className="text-gray-600">Valor estimado:</span>
+                <span className="text-2xl font-bold text-purple-600">R$ {profissionalAgendar.preco_hora}</span>
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button 
+                  type="button" 
+                  onClick={() => setModalAgendamento(false)}
+                  className="flex-1 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  type="submit" 
+                  disabled={salvandoAgendamento}
+                  className="flex-1 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 font-medium"
+                >
+                  {salvandoAgendamento ? 'Salvando...' : 'Confirmar'}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   )
 }
