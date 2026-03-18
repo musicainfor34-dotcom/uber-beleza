@@ -181,22 +181,41 @@ export default function ClienteDashboard() {
   async function salvarAgendamento(e: React.FormEvent) {
     e.preventDefault()
     if (!user?.id || !profissionalAgendar) return
+
     setSalvandoAgendamento(true)
     try {
+      // Calculando uma hora de fim (adicionando 1 hora por padrão)
+      const [h, m] = horaAgendamento.split(':').map(Number)
+      const horaFim = `${String(h + 1).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+
       const { error } = await supabase.from('agendamentos').insert({
         cliente_id: user.id,
         profissional_id: profissionalAgendar.id,
         data_agendamento: dataAgendamento,
         hora_inicio: horaAgendamento,
-        hora_fim: '10:00',
-        endereco: enderecoAgendamento || 'A combinar',
+        hora_fim: horaFim,
+        endereco: enderecoAgendamento,
+        bairro: 'Centro', // Campo obrigatório no seu banco
+        cidade: profissionalAgendar.cidade || 'Porto Velho', // Campo obrigatório no seu banco
         status: 'pendente',
-        valor_total: profissionalAgendar.preco_hora || 80
+        valor_total: profissionalAgendar.preco_hora || 80,
+        servico_id: 'servico-padrao' // Provavelmente sua tabela exige isso
       })
-      if (error) throw error
-      alert('✅ Agendamento solicitado!')
+
+      if (error) {
+        console.error('Erro detalhado do Supabase:', error)
+        throw error
+      }
+      
+      alert('✅ Agendamento solicitado com sucesso!')
       setModalAgendamento(false)
-    } catch (error) { alert('Erro ao agendar') } finally { setSalvandoAgendamento(false) }
+      setEnderecoAgendamento('')
+    } catch (error: any) {
+      console.error('Erro ao agendar:', error)
+      alert(`❌ Erro ao agendar: ${error.message || 'Verifique os campos'}`)
+    } finally {
+      setSalvandoAgendamento(false)
+    }
   }
 
   if (loading) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="animate-spin text-purple-600" /></div>
