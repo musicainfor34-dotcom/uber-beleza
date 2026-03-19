@@ -20,11 +20,8 @@ import {
   ArrowLeft,
   Phone,
   DollarSign,
-  Check,
-  Navigation,
-  Clock
+  Check
 } from 'lucide-react'
-import RastreamentoMapa from '../../components/RastreamentoMapa'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -66,23 +63,11 @@ interface Mensagem {
   created_at: string
 }
 
-interface Agendamento {
-  id: string
-  profissional_id: string
-  servico: { nome: string }
-  profissional: { nome: string; telefone: string }
-  data_agendamento: string
-  hora_inicio: string
-  valor_total: number
-  endereco: string
-  status: 'pendente' | 'confirmado' | 'cancelado' | 'concluido'
-}
-
 export default function ClienteDashboard() {
   const router = useRouter()
   const [user, setUser] = useState<any>(null)
   const [loading, setLoading] = useState(true)
-  const [abaAtiva, setAbaAtiva] = useState<'servicos' | 'conversas' | 'agendamentos'>('servicos')
+  const [abaAtiva, setAbaAtiva] = useState<'servicos' | 'conversas'>('servicos')
   const [categoriaSelecionada, setCategoriaSelecionada] = useState<string | null>(null)
   const [profissionais, setProfissionais] = useState<Profissional[]>([])
   const [loadingProfissionais, setLoadingProfissionais] = useState(false)
@@ -94,6 +79,7 @@ export default function ClienteDashboard() {
   const [novaMensagem, setNovaMensagem] = useState('')
   const [conversas, setConversas] = useState<Conversa[]>([])
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const chatChannelRef = useRef<any>(null)
 
   // Agendamento
   const [modalAgendamento, setModalAgendamento] = useState(false)
@@ -102,10 +88,6 @@ export default function ClienteDashboard() {
   const [horaAgendamento, setHoraAgendamento] = useState('09:00')
   const [enderecoAgendamento, setEnderecoAgendamento] = useState('')
   const [salvandoAgendamento, setSalvandoAgendamento] = useState(false)
-
-  // Rastreamento GPS
-  const [meusAgendamentos, setMeusAgendamentos] = useState<Agendamento[]>([])
-  const [agendamentoRastreando, setAgendamentoRastreando] = useState<Agendamento | null>(null)
 
   useEffect(() => {
     checkUser()
@@ -118,19 +100,15 @@ export default function ClienteDashboard() {
   }, [user, abaAtiva])
 
   useEffect(() => {
-    if (user?.id) {
-      fetchMeusAgendamentos()
-    }
-  }, [user])
-
-  useEffect(() => {
     if (categoriaSelecionada) {
       buscarProfissionais(categoriaSelecionada)
     }
   }, [categoriaSelecionada])
 
+  // 🎯 SUBSCRIPTION EM TEMPO REAL PARA O CHAT
   useEffect(() => {
     if (chatAberto && conversaSelecionada?.id) {
+      // Cria canal para escutar novas mensagens
       const channel = supabase
         .channel(`chat-cliente:${conversaSelecionada.id}`)
         .on(
@@ -143,10 +121,14 @@ export default function ClienteDashboard() {
           },
           (payload) => {
             const novaMsg = payload.new as Mensagem
+            
+            // Adiciona mensagem apenas se não existir (evita duplicatas)
             setMensagens((prev) => {
               if (prev.some(m => m.id === novaMsg.id)) return prev
               return [...prev, novaMsg]
             })
+            
+            // Scroll para baixo quando chegar nova mensagem
             setTimeout(() => {
               messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
             }, 100)
@@ -154,12 +136,17 @@ export default function ClienteDashboard() {
         )
         .subscribe()
 
+      chatChannelRef.current = channel
+
       return () => {
-        supabase.removeChannel(channel)
+        if (chatChannelRef.current) {
+          supabase.removeChannel(chatChannelRef.current)
+        }
       }
     }
   }, [chatAberto, conversaSelecionada?.id])
 
+  // Scroll quando mensagens mudam
   useEffect(() => {
     if (chatAberto && mensagens.length > 0) {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -176,38 +163,29 @@ export default function ClienteDashboard() {
     setLoading(false)
   }
 
-  async function fetchMeusAgendamentos() {
-    if (!user?.id) return
-    try {
-      const { data, error } = await supabase
-        .from('agendamentos')
-        .select(`
-          *,
-          profissional:profissional_id(nome, telefone),
-          servico:servico_id(nome)
-        `)
-        .eq('cliente_id', user.id)
-        .order('data_agendamento', { ascending: true })
-      
-      if (error) throw error
-      setMeusAgendamentos(data || [])
-    } catch (error) {
-      console.error('Erro ao buscar agendamentos:', error)
-    }
-  }
-
+  // BUSCA CORRIGIDA DE PROFISSIONAIS
   async function buscarProfissionais(categoria: string) {
     setLoadingProfissionais(true)
     try {
+      console.log('Buscando profissionais para:', categoria)
+      
+      // Tenta buscar usando contains (array)
       const { data, error } = await supabase
         .from('professionals')
         .select('*')
         .eq('ativo', true)
         .contains('especialidade', [categoria])
 
-      if (error) throw error
+      if (error) {
+        console.error('Erro na busca:', error)
+        throw error
+      }
 
+      console.log('Profissionais encontrados:', data)
+
+      // Se não encontrou nada, tenta busca case-insensitive
       if (!data || data.length === 0) {
+        console.log('Tentando busca alternativa...')
         const { data: todos } = await supabase
           .from('professionals')
           .select('*')
@@ -220,6 +198,7 @@ export default function ClienteDashboard() {
           )
         })
         
+        console.log('Filtrados manualmente:', filtrados)
         setProfissionais(filtrados)
       } else {
         setProfissionais(data)
@@ -244,6 +223,7 @@ export default function ClienteDashboard() {
       if (error) throw error
 
       if (data) {
+        // Busca nomes dos profissionais
         const profIds = data.map(c => c.professional_id)
         const { data: profs } = await supabase
           .from('professionals')
@@ -275,6 +255,7 @@ export default function ClienteDashboard() {
   async function abrirChat(profissional: Profissional) {
     if (!user?.id) return
 
+    // Verifica se já existe conversa
     const { data: existente } = await supabase
       .from('conversations')
       .select('*')
@@ -284,6 +265,7 @@ export default function ClienteDashboard() {
 
     let conversaId = existente?.id
 
+    // Se não existe, cria uma
     if (!existente) {
       const { data: nova, error } = await supabase
         .from('conversations')
@@ -305,6 +287,7 @@ export default function ClienteDashboard() {
       conversaId = nova.id
     }
 
+    // Busca mensagens históricas
     const { data: msgs } = await supabase
       .from('messages')
       .select('*')
@@ -323,13 +306,18 @@ export default function ClienteDashboard() {
     setMensagens(msgs || [])
     setChatAberto(true)
     
+    // Marca como lida
     await supabase.from('conversations').update({ unread_client: false }).eq('id', conversaId)
+    
+    // Atualiza lista de conversas em background
     carregarConversas()
   }
 
+  // 🎯 ABRE CHAT A PARTIR DA LISTA DE CONVERSAS (já existente)
   async function abrirChatExistente(conversa: Conversa) {
     if (!user?.id) return
 
+    // Busca mensagens históricas
     const { data: msgs } = await supabase
       .from('messages')
       .select('*')
@@ -340,8 +328,10 @@ export default function ClienteDashboard() {
     setMensagens(msgs || [])
     setChatAberto(true)
     
+    // Marca como lida
     await supabase.from('conversations').update({ unread_client: false }).eq('id', conversa.id)
     
+    // Atualiza lista
     setConversas(prev => prev.map(c => 
       c.id === conversa.id ? { ...c, unread_client: false } : c
     ))
@@ -351,6 +341,8 @@ export default function ClienteDashboard() {
     if (!novaMensagem.trim() || !conversaSelecionada || !user?.id) return
 
     const mensagemTemp = novaMensagem.trim()
+    
+    // Limpa input imediatamente para melhor UX
     setNovaMensagem('')
 
     const { error } = await supabase.from('messages').insert({
@@ -363,16 +355,19 @@ export default function ClienteDashboard() {
 
     if (error) {
       console.error('Erro:', error)
+      // Restaura mensagem se deu erro
       setNovaMensagem(mensagemTemp)
       return
     }
 
+    // Atualiza conversa com última mensagem
     await supabase.from('conversations').update({ 
       last_message: mensagemTemp,
       updated_at: new Date().toISOString(),
       unread_professional: true 
     }).eq('id', conversaSelecionada.id)
 
+    // Atualiza localmente
     setMensagens(prev => [...prev, {
       id: Date.now().toString(),
       sender_type: 'client',
@@ -380,10 +375,12 @@ export default function ClienteDashboard() {
       created_at: new Date().toISOString()
     }])
     
+    // Scroll imediato
     setTimeout(() => {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
     }, 50)
     
+    // Atualiza lista de conversas em background
     carregarConversas()
   }
 
@@ -393,48 +390,54 @@ export default function ClienteDashboard() {
     setDataAgendamento(new Date().toISOString().split('T')[0])
   }
 
-  async function salvarAgendamento(e: React.FormEvent) {
-    e.preventDefault()
-    if (!user?.id || !profissionalAgendar) return
+async function salvarAgendamento(e: React.FormEvent) {
+  e.preventDefault()
+  if (!user?.id || !profissionalAgendar) return
 
-    setSalvandoAgendamento(true)
+  setSalvandoAgendamento(true)
+  
+  // Dados que serão enviados
+const dadosAgendamento = {
+  cliente_id: user.id,
+  profissional_id: profissionalAgendar.id,
+  data_agendamento: dataAgendamento,
+  hora_inicio: horaAgendamento,
+  hora_fim: calcularHoraFim(horaAgendamento, 60),
+  endereco: enderecoAgendamento || 'A combinar',
+  bairro: 'Centro',
+  cidade: profissionalAgendar.cidade || 'Porto Velho',
+  status: 'pendente',
+  valor_total: profissionalAgendar.preco_hora || 80,
+  // REMOVA OU COMENTE ESTA LINHA:
+  // servico_id: 'servico-padrao'
+}
+
+  // DEBUG: Veja no console exatamente o que está sendo enviado
+  console.log('Dados do agendamento:', dadosAgendamento)
+
+  try {
+    const { data, error } = await supabase
+      .from('agendamentos')
+      .insert(dadosAgendamento)
+      .select()
+
+    if (error) {
+      console.error('Erro detalhado do Supabase:', error)
+      alert(`❌ Erro: ${error.message}`)
+      throw error
+    }
     
-    const dadosAgendamento = {
-      cliente_id: user.id,
-      profissional_id: profissionalAgendar.id,
-      data_agendamento: dataAgendamento,
-      hora_inicio: horaAgendamento,
-      hora_fim: calcularHoraFim(horaAgendamento, 60),
-      endereco: enderecoAgendamento || 'A combinar',
-      bairro: 'Centro',
-      cidade: profissionalAgendar.cidade || 'Porto Velho',
-      status: 'pendente',
-      valor_total: profissionalAgendar.preco_hora || 80,
-    }
-
-    try {
-      const { data, error } = await supabase
-        .from('agendamentos')
-        .insert(dadosAgendamento)
-        .select()
-
-      if (error) {
-        console.error('Erro detalhado do Supabase:', error)
-        alert(`❌ Erro: ${error.message}`)
-        throw error
-      }
-      
-      alert('✅ Agendamento solicitado! O profissional irá confirmar.')
-      setModalAgendamento(false)
-      setEnderecoAgendamento('')
-      fetchMeusAgendamentos()
-    } catch (error: any) {
-      console.error('Erro completo:', error)
-      alert(`❌ Erro ao agendar: ${error?.message || 'Tente novamente'}`)
-    } finally {
-      setSalvandoAgendamento(false)
-    }
+    console.log('Agendamento criado:', data)
+    alert('✅ Agendamento solicitado! O profissional irá confirmar.')
+    setModalAgendamento(false)
+    setEnderecoAgendamento('')
+  } catch (error: any) {
+    console.error('Erro completo:', error)
+    alert(`❌ Erro ao agendar: ${error?.message || 'Tente novamente'}`)
+  } finally {
+    setSalvandoAgendamento(false)
   }
+}
 
   function calcularHoraFim(hora: string, minutos: number) {
     const [h, m] = hora.split(':').map(Number)
@@ -460,7 +463,7 @@ export default function ClienteDashboard() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
+      {/* Header Desktop/Mobile */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-30">
         <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
           <div>
@@ -482,13 +485,13 @@ export default function ClienteDashboard() {
       </header>
 
       <div className="max-w-7xl mx-auto flex flex-col md:flex-row min-h-[calc(100vh-80px)]">
-        {/* Sidebar */}
+        {/* Sidebar - Mobile: horizontal / Desktop: vertical lateral */}
         <aside className="w-full md:w-80 bg-white border-b md:border-b-0 md:border-r border-gray-200 flex flex-col">
           <div className="p-4 border-b border-gray-100">
             <div className="flex gap-2">
               <button
                 onClick={() => {setAbaAtiva('servicos'); setCategoriaSelecionada(null)}}
-                className={`flex-1 py-2 px-2 rounded-lg text-xs md:text-sm font-medium transition ${
+                className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition ${
                   abaAtiva === 'servicos' 
                     ? 'bg-pink-100 text-pink-700' 
                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
@@ -497,29 +500,14 @@ export default function ClienteDashboard() {
                 Serviços
               </button>
               <button
-                onClick={() => setAbaAtiva('agendamentos')}
-                className={`flex-1 py-2 px-2 rounded-lg text-xs md:text-sm font-medium transition relative ${
-                  abaAtiva === 'agendamentos' 
-                    ? 'bg-green-100 text-green-700' 
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
-              >
-                Agendos
-                {meusAgendamentos.filter(a => a.status === 'confirmado' || a.status === 'pendente').length > 0 && (
-                  <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full text-white text-xs flex items-center justify-center">
-                    {meusAgendamentos.filter(a => a.status === 'confirmado' || a.status === 'pendente').length}
-                  </span>
-                )}
-              </button>
-              <button
                 onClick={() => setAbaAtiva('conversas')}
-                className={`flex-1 py-2 px-2 rounded-lg text-xs md:text-sm font-medium transition ${
+                className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition ${
                   abaAtiva === 'conversas' 
                     ? 'bg-blue-100 text-blue-700' 
                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                 }`}
               >
-                Chat
+                Conversas
               </button>
             </div>
           </div>
@@ -549,43 +537,6 @@ export default function ClienteDashboard() {
                     <ChevronRight className={`w-5 h-5 flex-shrink-0 ${categoriaSelecionada === cat.id ? 'text-pink-400' : 'text-gray-300'}`} />
                   </button>
                 ))}
-              </div>
-            ) : abaAtiva === 'agendamentos' ? (
-              <div className="space-y-3">
-                {meusAgendamentos.length === 0 ? (
-                  <div className="text-center py-8 text-gray-400">
-                    <Calendar className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                    <p className="text-sm">Nenhum agendamento</p>
-                  </div>
-                ) : (
-                  meusAgendamentos.slice(0, 5).map((ag) => (
-                    <div 
-                      key={ag.id}
-                      onClick={() => setAbaAtiva('agendamentos')}
-                      className={`p-3 rounded-2xl border cursor-pointer transition ${
-                        ag.status === 'confirmado' 
-                          ? 'border-green-300 bg-green-50' 
-                          : ag.status === 'pendente'
-                          ? 'border-yellow-300 bg-yellow-50'
-                          : 'border-gray-200 bg-white'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="font-bold text-sm text-gray-800">{ag.servico?.nome || 'Serviço'}</p>
-                          <p className="text-xs text-gray-500">{ag.profissional?.nome}</p>
-                        </div>
-                        <span className={`text-xs px-2 py-1 rounded-full ${
-                          ag.status === 'confirmado' ? 'bg-green-500 text-white' :
-                          ag.status === 'pendente' ? 'bg-yellow-500 text-white' :
-                          'bg-gray-500 text-white'
-                        }`}>
-                          {ag.status === 'confirmado' ? '✓' : ag.status === 'pendente' ? '⏳' : '✓'}
-                        </span>
-                      </div>
-                    </div>
-                  ))
-                )}
               </div>
             ) : (
               <div className="space-y-3">
@@ -636,6 +587,7 @@ export default function ClienteDashboard() {
               </div>
             ) : (
               <div>
+                {/* Header da Categoria */}
                 <div className="flex items-center gap-4 mb-6">
                   <button 
                     onClick={() => setCategoriaSelecionada(null)}
@@ -658,6 +610,7 @@ export default function ClienteDashboard() {
                   )}
                 </div>
 
+                {/* Lista de Profissionais */}
                 {loadingProfissionais ? (
                   <div className="flex items-center justify-center py-12">
                     <Loader2 className="w-8 h-8 animate-spin text-purple-600" />
@@ -744,101 +697,6 @@ export default function ClienteDashboard() {
                 )}
               </div>
             )
-          ) : abaAtiva === 'agendamentos' ? (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-bold text-gray-800">Meus Agendamentos</h2>
-                <button 
-                  onClick={fetchMeusAgendamentos}
-                  className="p-2 bg-white rounded-lg shadow-sm hover:shadow-md transition"
-                >
-                  <Loader2 className="w-5 h-5 text-purple-600" />
-                </button>
-              </div>
-              
-              {meusAgendamentos.length === 0 ? (
-                <div className="bg-white rounded-2xl p-8 text-center border border-gray-200">
-                  <Calendar className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-                  <p className="text-gray-500">Você não tem agendamentos ainda</p>
-                  <button 
-                    onClick={() => setAbaAtiva('servicos')}
-                    className="mt-4 px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
-                  >
-                    Agendar agora
-                  </button>
-                </div>
-              ) : (
-                meusAgendamentos.map((ag) => (
-                  <div key={ag.id} className="bg-white rounded-2xl p-4 md:p-6 shadow-sm border border-gray-100">
-                    <div className="flex justify-between items-start mb-3">
-                      <div>
-                        <h3 className="font-bold text-lg text-gray-800">{ag.servico?.nome || 'Serviço'}</h3>
-                        <p className="text-sm text-gray-500">Prof: {ag.profissional?.nome}</p>
-                      </div>
-                      <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                        ag.status === 'confirmado' ? 'bg-green-100 text-green-700' :
-                        ag.status === 'pendente' ? 'bg-yellow-100 text-yellow-700' :
-                        ag.status === 'cancelado' ? 'bg-red-100 text-red-700' :
-                        'bg-gray-100 text-gray-700'
-                      }`}>
-                        {ag.status === 'confirmado' ? '✅ Confirmado' :
-                         ag.status === 'pendente' ? '⏳ Pendente' :
-                         ag.status === 'cancelado' ? '❌ Cancelado' :
-                         '✔️ Concluído'}
-                      </span>
-                    </div>
-                    
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4 text-sm">
-                      <div>
-                        <p className="text-gray-500 text-xs">Data</p>
-                        <p className="font-medium">{new Date(ag.data_agendamento).toLocaleDateString('pt-BR')}</p>
-                      </div>
-                      <div>
-                        <p className="text-gray-500 text-xs">Horário</p>
-                        <p className="font-medium">{ag.hora_inicio}</p>
-                      </div>
-                      <div>
-                        <p className="text-gray-500 text-xs">Valor</p>
-                        <p className="font-bold text-purple-600">R$ {ag.valor_total}</p>
-                      </div>
-                      <div>
-                        <p className="text-gray-500 text-xs">Telefone</p>
-                        <p className="font-medium">{ag.profissional?.telefone || 'N/A'}</p>
-                      </div>
-                    </div>
-
-                    <div className="bg-gray-50 p-3 rounded-lg mb-4">
-                      <p className="text-xs text-gray-500">Endereço</p>
-                      <p className="font-medium text-sm">{ag.endereco}</p>
-                    </div>
-
-                    {/* BOTÃO VER NO MAPA - APENAS QUANDO CONFIRMADO */}
-                    {ag.status === 'confirmado' && (
-                      <button 
-                        onClick={() => setAgendamentoRastreando(ag)}
-                        className="w-full py-3 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white rounded-xl font-bold flex items-center justify-center gap-2 transition-all shadow-md hover:shadow-lg"
-                      >
-                        <Navigation className="w-5 h-5 animate-pulse" />
-                        Ver localização em tempo real
-                      </button>
-                    )}
-                    
-                    {ag.status === 'pendente' && (
-                      <div className="text-sm text-yellow-700 text-center bg-yellow-50 py-3 rounded-xl border border-yellow-200 flex items-center justify-center gap-2">
-                        <Clock className="w-4 h-4" />
-                        Aguardando confirmação do profissional...
-                      </div>
-                    )}
-                    
-                    {ag.status === 'concluido' && (
-                      <div className="text-sm text-green-700 text-center bg-green-50 py-3 rounded-xl border border-green-200">
-                        ✅ Serviço concluído
-                      </div>
-                    )}
-                  </div>
-                ))
-              )}
-            </div>
           ) : (
             <div className="h-full flex flex-col items-center justify-center text-gray-400">
               <MessageCircle className="w-12 h-12 md:w-16 md:h-16 mb-4 opacity-30" />
@@ -848,15 +706,6 @@ export default function ClienteDashboard() {
           )}
         </main>
       </div>
-
-      {/* MODAL DE RASTREAMENTO */}
-      {agendamentoRastreando && (
-        <RastreamentoMapa 
-          agendamentoId={agendamentoRastreando.id}
-          profissionalId={agendamentoRastreando.profissional_id}
-          onClose={() => setAgendamentoRastreando(null)}
-        />
-      )}
 
       {/* Modal de Chat */}
       {chatAberto && conversaSelecionada && (
