@@ -236,64 +236,6 @@ export default function DashboardProfissional() {
     }
   }, [profissional])
 
-// Efeito para enviar localização em tempo real (só quando tem agendamento confirmado)
-useEffect(() => {
-  // Verifica se tem agendamento confirmado ativo
-  const agendamentoAtivo = agendamentos.find(ag => ag.status === 'confirmado')
-  
-  if (!agendamentoAtivo || !profissional) return
-  
-  console.log('📍 Iniciando rastreamento GPS para agendamento:', agendamentoAtivo.id)
-  
-  // Função para enviar localização
-  const enviarLocalizacao = async () => {
-    try {
-      // Pega posição atual do GPS
-      navigator.geolocation.getCurrentPosition(
-        async (position) => {
-          const { latitude, longitude } = position.coords
-          
-          console.log('📍 Enviando localização:', latitude, longitude)
-          
-          // Upsert (insere ou atualiza) no Supabase
-          const { error } = await supabase
-            .from('localizacao_profissional')
-            .upsert({
-              profissional_id: profissional.id,
-              agendamento_id: agendamentoAtivo.id,
-              latitude,
-              longitude,
-              updated_at: new Date().toISOString()
-            }, {
-              onConflict: 'profissional_id'
-            })
-          
-          if (error) console.error('Erro ao enviar localização:', error)
-        },
-        (error) => {
-          console.error('Erro GPS:', error.message)
-        },
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-      )
-    } catch (e) {
-      console.error('Erro:', e)
-    }
-  }
-  
-  // Envia imediatamente
-  enviarLocalizacao()
-  
-  // Repete a cada 10 segundos
-  const interval = setInterval(enviarLocalizacao, 10000)
-  
-  return () => {
-    clearInterval(interval)
-    console.log('🛑 Parando rastreamento GPS')
-  }
-}, [agendamentos, profissional])
-
-
-
   async function fetchUnreadCount() {
     if (!profissional?.id) return
     const { count } = await supabase
@@ -311,16 +253,11 @@ useEffect(() => {
     setIsChatOpen(true)
   }
 
- async function checkUser() {
-  const { data: { session } } = await supabase.auth.getSession()
-  if (!session) { 
-    router.push('/login')
-    return 
+  async function checkUser() {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) { router.push('/login'); return }
+    setUser(session.user)
   }
-  
-  setUser(session.user)
-  console.log('👤 Usuário logado:', session.user.email, 'ID:', session.user.id)
-}
 
   async function fetchProfissional() {
     try {
@@ -360,39 +297,38 @@ useEffect(() => {
     }
   }
 
-async function fetchAgendamentos() {
-  if (!profissional?.id) {
-    console.log('⚠️ Profissional não carregado ainda')
-    return
+  async function fetchAgendamentos() {
+    if (!profissional) return
+    setRefreshing(true)
+    try {
+      const { data } = await supabase
+        .from('agendamentos')
+        .select('*')
+        .eq('profissional_id', profissional.id)
+        .order('data_agendamento', { ascending: true })
+      
+      if (data) {
+        const agendamentosCompletos = await Promise.all(
+          data.map(async (ag: any) => {
+            const { data: clienteData } = await supabase
+              .from('auth.users') // ou a tabela correta de usuários/clientes
+              .select('email, raw_user_meta_data')
+              .eq('id', ag.cliente_id)
+              .single()
+            
+            return { 
+              ...ag, 
+              cliente: {
+                email: clienteData?.email || 'Sem email',
+                user_metadata: clienteData?.raw_user_meta_data || { nome: 'Cliente' }
+              }
+            }
+          })
+        )
+        setAgendamentos(agendamentosCompletos)
+      }
+    } finally { setRefreshing(false) }
   }
-  
-  setRefreshing(true)
-  try {
-    // Busca agendamentos usando o ID do profissional (não o user_id)
-    const { data, error } = await supabase
-      .from('agendamentos')
-      .select(`
-        *,
-        cliente:cliente_id(email, raw_user_meta_data)
-      `)
-      .eq('profissional_id', profissional.id)
-      .order('data_agendamento', { ascending: true })
-    
-    if (error) {
-      console.error('Erro ao buscar agendamentos:', error)
-      alert('Erro ao carregar agendamentos: ' + error.message)
-      return
-    }
-    
-    console.log(`✅ ${data?.length || 0} agendamentos encontrados`)
-    setAgendamentos(data || [])
-    
-  } catch (err) {
-    console.error('Erro catch:', err)
-  } finally { 
-    setRefreshing(false) 
-  }
-}
 
   async function atualizarStatus(agendamentoId: string, novoStatus: string) {
     await supabase.from('agendamentos').update({ status: novoStatus }).eq('id', agendamentoId)
