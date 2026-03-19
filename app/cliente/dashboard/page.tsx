@@ -396,7 +396,7 @@ export default function ClienteDashboard() {
 
     setSalvandoAgendamento(true)
     try {
-      const { error } = await supabase.from('agendamentos').insert({
+      const agendamentoData = {
         cliente_id: user.id,
         profissional_id: profissionalAgendar.id,
         data_agendamento: dataAgendamento,
@@ -408,16 +408,23 @@ export default function ClienteDashboard() {
         status: 'pendente',
         valor_total: profissionalAgendar.preco_hora || 80,
         servico_id: 'servico-padrao'
-      })
+      }
 
-      if (error) throw error
+      console.log('Enviando agendamento:', agendamentoData)
+
+      const { error } = await supabase.from('agendamentos').insert(agendamentoData)
+
+      if (error) {
+        console.error('Erro detalhado do Supabase:', error)
+        throw error
+      }
       
       alert('✅ Agendamento solicitado! O profissional irá confirmar.')
       setModalAgendamento(false)
       setEnderecoAgendamento('')
-    } catch (error) {
+    } catch (error: any) {
       console.error('Erro:', error)
-      alert('❌ Erro ao agendar. Tente novamente.')
+      alert('❌ Erro ao agendar: ' + (error.message || 'Tente novamente.'))
     } finally {
       setSalvandoAgendamento(false)
     }
@@ -739,7 +746,7 @@ export default function ClienteDashboard() {
                   onChange={(e) => setNovaMensagem(e.target.value)}
                   onKeyPress={(e) => e.key === 'Enter' && enviarMensagem()}
                   placeholder="Digite sua mensagem..."
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-full focus:outline-none focus:border-purple-500 text-base"
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-full focus:outline-none focus:border-purple-500 text-base text-gray-900 placeholder-gray-400"
                 />
                 <button 
                   onClick={enviarMensagem}
@@ -777,7 +784,7 @@ export default function ClienteDashboard() {
                   value={dataAgendamento}
                   onChange={(e) => setDataAgendamento(e.target.value)}
                   min={new Date().toISOString().split('T')[0]}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 text-gray-900 bg-white"
                 />
               </div>
 
@@ -786,7 +793,7 @@ export default function ClienteDashboard() {
                 <select 
                   value={horaAgendamento}
                   onChange={(e) => setHoraAgendamento(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 text-gray-900 bg-white"
                 >
                   {['08:00','09:00','10:00','11:00','13:00','14:00','15:00','16:00','17:00'].map(h => (
                     <option key={h} value={h}>{h}</option>
@@ -800,12 +807,12 @@ export default function ClienteDashboard() {
                   value={enderecoAgendamento}
                   onChange={(e) => setEnderecoAgendamento(e.target.value)}
                   placeholder="Seu endereço completo"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 h-20 resize-none"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 h-20 resize-none text-gray-900 placeholder-gray-400 bg-white"
                 />
               </div>
 
               <div className="bg-purple-50 p-4 rounded-xl flex items-center justify-between">
-                <span className="text-gray-600">Valor estimado:</span>
+                <span className="text-gray-700 font-medium">Valor estimado:</span>
                 <span className="text-2xl font-bold text-purple-600">R$ {profissionalAgendar.preco_hora}</span>
               </div>
 
@@ -813,7 +820,7 @@ export default function ClienteDashboard() {
                 <button 
                   type="button" 
                   onClick={() => setModalAgendamento(false)}
-                  className="flex-1 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                  className="flex-1 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700 font-medium"
                 >
                   Cancelar
                 </button>
