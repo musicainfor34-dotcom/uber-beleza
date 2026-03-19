@@ -24,39 +24,53 @@ import {
 } from 'lucide-react'
 import ChatModal from './ChatModal'
 
+// Contexto de áudio global
 let audioContext: AudioContext | null = null
 
+// Função para tocar som de notificação (beep) revisada
 const playNotificationSound = async () => {
   try {
+    // Cria o contexto apenas se necessário e dentro da função
     if (!audioContext) {
       audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
     }
+
+    // Tenta retomar o contexto caso esteja suspenso (bloqueio do navegador)
     if (audioContext.state === 'suspended') {
       await audioContext.resume()
     }
+
     if (audioContext.state !== 'running') return
 
     const playBeep = (freq: number, startTime: number) => {
       const oscillator = audioContext!.createOscillator()
       const gainNode = audioContext!.createGain()
+      
       oscillator.connect(gainNode)
       gainNode.connect(audioContext!.destination)
+      
       oscillator.frequency.value = freq
       oscillator.type = 'sine'
+      
       gainNode.gain.setValueAtTime(0, startTime)
       gainNode.gain.linearRampToValueAtTime(0.3, startTime + 0.1)
       gainNode.gain.exponentialRampToValueAtTime(0.01, startTime + 0.5)
+      
       oscillator.start(startTime)
       oscillator.stop(startTime + 0.5)
     }
 
+    // Toca dois beeps
     const now = audioContext.currentTime
     playBeep(800, now)
     playBeep(1000, now + 0.2)
+    
+    console.log('🔊 Beep tocado!')
   } catch (e) {
     console.error('Erro ao tocar som:', e)
   }
 }
+
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -95,27 +109,33 @@ export default function DashboardProfissional() {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   
+  // Estados do chat
   const [isChatOpen, setIsChatOpen] = useState(false)
   const [unreadCount, setUnreadCount] = useState(0)
   const [chatClientId, setChatClientId] = useState<string | null>(null)
   const [chatClientName, setChatClientName] = useState<string>('')
   const [chatClientEmail, setChatClientEmail] = useState<string>('')
 
+  // Estados para edição do perfil
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const [savingProfile, setSavingProfile] = useState(false)
+  // Estado para controle do alerta sonoro
   const [alertaInterval, setAlertaInterval] = useState<NodeJS.Timeout | null>(null)
   const agendamentosPendentesRef = useRef<Agendamento[]>([])
   
+  // Atualiza a ref quando agendamentos mudam
   useEffect(() => {
     agendamentosPendentesRef.current = agendamentos.filter(ag => ag.status === 'pendente')
   }, [agendamentos])
-  
+  // Toca som quando agendamentos são carregados e há pendentes
   useEffect(() => {
     const pendentes = agendamentos.filter(ag => ag.status === 'pendente')
     if (pendentes.length > 0) {
+      console.log('🔔 Agendamentos carregados com pendentes:', pendentes.length)
       playNotificationSound()
     }
   }, [agendamentos])
+
 
   const [editForm, setEditForm] = useState({
     nome: '',
@@ -129,12 +149,14 @@ export default function DashboardProfissional() {
     checkUser()
   }, [])
 
+  // Efeito para desbloquear áudio no primeiro clique do usuário
   useEffect(() => {
     const handleFirstInteraction = () => {
       if (!audioContext) {
         audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
       }
       audioContext.resume().then(() => {
+        console.log('🔓 Áudio desbloqueado pelo usuário')
         document.removeEventListener('click', handleFirstInteraction)
       })
     }
@@ -142,21 +164,30 @@ export default function DashboardProfissional() {
     return () => document.removeEventListener('click', handleFirstInteraction)
   }, [])
 
+  // Efeito para alerta sonoro REPETITIVO (1 em 1 minuto)
   useEffect(() => {
     const verificarEAlertar = () => {
       const pendentes = agendamentosPendentesRef.current
       if (pendentes.length > 0) {
+        console.log(`🔔 Alerta: ${pendentes.length} agendamento(s) pendente(s). Tocando alarme...`)
         playNotificationSound()
       }
     }
+
+    // Executa a primeira vez após 2 segundos para dar tempo do app carregar
     const timeoutInicial = setTimeout(verificarEAlertar, 2000)
+
+    // Configura intervalo de 1 minuto (60000ms)
     const interval = setInterval(verificarEAlertar, 60000)
     setAlertaInterval(interval)
+
     return () => {
       clearTimeout(timeoutInicial)
       if (interval) clearInterval(interval)
     }
-  }, [])
+  }, []) // Executa apenas uma vez ao montar
+
+
 
   useEffect(() => {
     if (user) {
@@ -164,6 +195,7 @@ export default function DashboardProfissional() {
     }
   }, [user])
 
+  // Preenche formulário quando abrir modal
   useEffect(() => {
     if (isEditModalOpen && profissional) {
       setEditForm({
@@ -178,11 +210,6 @@ export default function DashboardProfissional() {
 
   useEffect(() => {
     if (profissional) {
-      console.log('🔍 Profissional carregado no dashboard:', {
-        id_tabela: profissional.id,
-        user_id: profissional.user_id,
-        nome: profissional.nome
-      })
       fetchAgendamentos()
       fetchUnreadCount()
       
@@ -209,41 +236,63 @@ export default function DashboardProfissional() {
     }
   }, [profissional])
 
-  useEffect(() => {
-    if (!agendamentos.find(ag => ag.status === 'confirmado') || !profissional) return
-    
-    const enviarLocalizacao = async () => {
-      try {
-        navigator.geolocation.getCurrentPosition(
-          async (position) => {
-            const { latitude, longitude } = position.coords
-            await supabase
-              .from('localizacao_profissional')
-              .upsert({
-                profissional_id: profissional.id,
-                latitude,
-                longitude,
-                updated_at: new Date().toISOString()
-              }, {
-                onConflict: 'profissional_id'
-              })
-          },
-          (error) => {
-            console.error('Erro GPS:', error.message)
-          },
-          { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-        )
-      } catch (e) {
-        console.error('Erro:', e)
-      }
+// Efeito para enviar localização em tempo real (só quando tem agendamento confirmado)
+useEffect(() => {
+  // Verifica se tem agendamento confirmado ativo
+  const agendamentoAtivo = agendamentos.find(ag => ag.status === 'confirmado')
+  
+  if (!agendamentoAtivo || !profissional) return
+  
+  console.log('📍 Iniciando rastreamento GPS para agendamento:', agendamentoAtivo.id)
+  
+  // Função para enviar localização
+  const enviarLocalizacao = async () => {
+    try {
+      // Pega posição atual do GPS
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          const { latitude, longitude } = position.coords
+          
+          console.log('📍 Enviando localização:', latitude, longitude)
+          
+          // Upsert (insere ou atualiza) no Supabase
+          const { error } = await supabase
+            .from('localizacao_profissional')
+            .upsert({
+              profissional_id: profissional.id,
+              agendamento_id: agendamentoAtivo.id,
+              latitude,
+              longitude,
+              updated_at: new Date().toISOString()
+            }, {
+              onConflict: 'profissional_id'
+            })
+          
+          if (error) console.error('Erro ao enviar localização:', error)
+        },
+        (error) => {
+          console.error('Erro GPS:', error.message)
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      )
+    } catch (e) {
+      console.error('Erro:', e)
     }
-    
-    enviarLocalizacao()
-    const interval = setInterval(enviarLocalizacao, 10000)
-    return () => {
-      clearInterval(interval)
-    }
-  }, [agendamentos, profissional])
+  }
+  
+  // Envia imediatamente
+  enviarLocalizacao()
+  
+  // Repete a cada 10 segundos
+  const interval = setInterval(enviarLocalizacao, 10000)
+  
+  return () => {
+    clearInterval(interval)
+    console.log('🛑 Parando rastreamento GPS')
+  }
+}, [agendamentos, profissional])
+
+
 
   async function fetchUnreadCount() {
     if (!profissional?.id) return
@@ -262,15 +311,16 @@ export default function DashboardProfissional() {
     setIsChatOpen(true)
   }
 
-  async function checkUser() {
-    const { data: { session } } = await supabase.auth.getSession()
-    if (!session) { 
-      router.push('/login')
-      return 
-    }
-    setUser(session.user)
-    console.log('👤 Usuário logado (auth):', session.user.id, session.user.email)
+ async function checkUser() {
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) { 
+    router.push('/login')
+    return 
   }
+  
+  setUser(session.user)
+  console.log('👤 Usuário logado:', session.user.email, 'ID:', session.user.id)
+}
 
   async function fetchProfissional() {
     try {
@@ -279,27 +329,8 @@ export default function DashboardProfissional() {
         .select('*')
         .eq('user_id', user.id)
         .single()
-      
-      if (error) {
-        console.error('Erro ao buscar profissional:', error)
-      }
-      
-      if (data) {
-        console.log('✅ Profissional encontrado na tabela:', {
-          id: data.id,
-          user_id: data.user_id,
-          nome: data.nome
-        })
-        setProfissional(data)
-      } else {
-        console.error('❌ Nenhum profissional encontrado para user_id:', user.id)
-        alert('Seu cadastro de profissional não foi encontrado!')
-      }
-    } catch (err) { 
-      console.error(err) 
-    } finally { 
-      setLoading(false) 
-    }
+      if (data) setProfissional(data)
+    } catch (err) { console.error(err) } finally { setLoading(false) }
   }
 
   async function handleSaveProfile(e: React.FormEvent) {
@@ -329,40 +360,39 @@ export default function DashboardProfissional() {
     }
   }
 
-  async function fetchAgendamentos() {
-    if (!profissional?.id) {
-      console.log('⚠️ Profissional não carregado ainda')
+async function fetchAgendamentos() {
+  if (!profissional?.id) {
+    console.log('⚠️ Profissional não carregado ainda')
+    return
+  }
+  
+  setRefreshing(true)
+  try {
+    // Busca agendamentos usando o ID do profissional (não o user_id)
+    const { data, error } = await supabase
+      .from('agendamentos')
+      .select(`
+        *,
+        cliente:cliente_id(email, raw_user_meta_data)
+      `)
+      .eq('profissional_id', profissional.id)
+      .order('data_agendamento', { ascending: true })
+    
+    if (error) {
+      console.error('Erro ao buscar agendamentos:', error)
+      alert('Erro ao carregar agendamentos: ' + error.message)
       return
     }
     
-    console.log('🔍 Buscando agendamentos para profissional_id:', profissional.id)
+    console.log(`✅ ${data?.length || 0} agendamentos encontrados`)
+    setAgendamentos(data || [])
     
-    setRefreshing(true)
-    try {
-      const { data, error } = await supabase
-        .from('agendamentos')
-        .select(`
-          *,
-          cliente:cliente_id(email, raw_user_meta_data)
-        `)
-        .eq('profissional_id', profissional.id)
-        .order('data_agendamento', { ascending: true })
-      
-      if (error) {
-        console.error('❌ Erro ao buscar agendamentos:', error)
-        alert('Erro ao carregar agendamentos: ' + error.message)
-        return
-      }
-      
-      console.log(`✅ ${data?.length || 0} agendamentos encontrados:`, data)
-      setAgendamentos(data || [])
-      
-    } catch (err) {
-      console.error('Erro catch:', err)
-    } finally { 
-      setRefreshing(false) 
-    }
+  } catch (err) {
+    console.error('Erro catch:', err)
+  } finally { 
+    setRefreshing(false) 
   }
+}
 
   async function atualizarStatus(agendamentoId: string, novoStatus: string) {
     await supabase.from('agendamentos').update({ status: novoStatus }).eq('id', agendamentoId)
@@ -390,12 +420,7 @@ export default function DashboardProfissional() {
     <div className="min-h-screen bg-gray-50 text-gray-900">
       <header className="bg-gradient-to-r from-purple-600 to-pink-500 text-white p-4 shadow-lg">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold">Beleza Connect</h1>
-            {profissional && (
-              <p className="text-xs opacity-90">ID: {profissional.id?.slice(0,8)}... | {profissional.nome}</p>
-            )}
-          </div>
+          <h1 className="text-2xl font-bold">Beleza Connect</h1>
           <div className="flex items-center gap-4">
             <button onClick={() => setIsChatOpen(true)} className="relative p-2 bg-white/20 rounded-full">
               <MessageCircle className="w-6 h-6" />
@@ -413,31 +438,27 @@ export default function DashboardProfissional() {
             <button onClick={fetchAgendamentos} className="p-2 border rounded-lg hover:bg-white"><RefreshCw className={refreshing ? 'animate-spin' : ''} /></button>
           </div>
           
-          <div className="bg-blue-50 p-3 rounded-lg text-sm text-blue-800">
-            <p>Debug: Buscando agendamentos onde profissional_id = <strong>{profissional?.id?.slice(0,8)}...</strong></p>
-          </div>
-          
           {agendamentos.length === 0 ? (
             <div className="bg-white rounded-xl p-8 text-center border border-gray-100 shadow-sm">
               <Bell className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-              <p className="text-gray-500">Nenhum agendamento encontrado</p>
-              <p className="text-sm text-gray-400 mt-1">Se você tem agendamentos em outra conta, verifique se o ID acima corresponde ao que está salvo no banco.</p>
+              <p className="text-gray-500">Nenhum agendamento ainda</p>
+              <p className="text-sm text-gray-400 mt-1">Quando clientes agendarem, aparecerão aqui automaticamente</p>
             </div>
           ) : (
             agendamentos.map((ag) => (
               <div key={ag.id} className="bg-white p-4 rounded-xl border shadow-sm">
                 <div className="flex justify-between items-start">
                   <div>
-                    <h3 className="font-bold">{ag.cliente?.email || 'Cliente'}</h3>
+                    <h3 className="font-bold">{ag.servico?.nome}</h3>
                     <span className={`text-xs px-2 py-1 rounded-full border ${getStatusColor(ag.status)}`}>{ag.status}</span>
-                    <p className="text-xs text-gray-400 mt-1">ID Agendamento: {ag.id?.slice(0,8)}</p>
+                    <p className="text-sm text-gray-600 mt-1">Cliente: {ag.cliente?.user_metadata?.nome || ag.cliente?.email}</p>
                   </div>
                   <p className="font-bold text-purple-600">R$ {ag.valor_total?.toFixed(2)}</p>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-4 text-sm text-gray-500">
                   <div className="flex items-center gap-1"><Calendar className="w-4 h-4" />
                    {new Date(ag.data_agendamento).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}
-                  </div>
+                                    </div>
                   <div className="flex items-center gap-1"><Clock className="w-4 h-4" /> {ag.hora_inicio}</div>
                 </div>
                 <div className="mt-4 flex gap-2">
@@ -469,8 +490,7 @@ export default function DashboardProfissional() {
               {profissional?.nome?.[0]}
             </div>
             <h3 className="font-bold text-lg">{profissional?.nome}</h3>
-            <p className="text-xs text-gray-500 break-all">{profissional?.id}</p>
-            <p className="text-xs text-gray-400 mt-1">User ID: {profissional?.user_id?.slice(0,8)}...</p>
+            <p className="text-sm text-gray-500">{profissional?.cidade}</p>
           </div>
           
           <div className="space-y-3 mb-6 text-sm">
@@ -484,7 +504,7 @@ export default function DashboardProfissional() {
             </div>
             <div className="flex justify-between py-2 border-b">
               <span className="text-gray-600 flex items-center gap-2"><Scissors className="w-4 h-4" /> Especialidade</span>
-              <span className="text-right text-xs">{profissional?.especialidade?.join(', ')}</span>
+              <span>{profissional?.especialidade?.join(', ')}</span>
             </div>
           </div>
 
@@ -497,6 +517,7 @@ export default function DashboardProfissional() {
         </div>
       </main>
 
+      {/* Modal de Edição */}
       {isEditModalOpen && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
@@ -538,6 +559,7 @@ export default function DashboardProfissional() {
         </div>
       )}
 
+      {/* Modal de Chat */}
       <ChatModal 
         isOpen={isChatOpen}
         onClose={() => { setIsChatOpen(false); fetchUnreadCount() }}

@@ -108,6 +108,7 @@ export default function ClienteDashboard() {
   // 🎯 SUBSCRIPTION EM TEMPO REAL PARA O CHAT
   useEffect(() => {
     if (chatAberto && conversaSelecionada?.id) {
+      // Cria canal para escutar novas mensagens
       const channel = supabase
         .channel(`chat-cliente:${conversaSelecionada.id}`)
         .on(
@@ -120,10 +121,14 @@ export default function ClienteDashboard() {
           },
           (payload) => {
             const novaMsg = payload.new as Mensagem
+            
+            // Adiciona mensagem apenas se não existir (evita duplicatas)
             setMensagens((prev) => {
               if (prev.some(m => m.id === novaMsg.id)) return prev
               return [...prev, novaMsg]
             })
+            
+            // Scroll para baixo quando chegar nova mensagem
             setTimeout(() => {
               messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
             }, 100)
@@ -141,6 +146,7 @@ export default function ClienteDashboard() {
     }
   }, [chatAberto, conversaSelecionada?.id])
 
+  // Scroll quando mensagens mudam
   useEffect(() => {
     if (chatAberto && mensagens.length > 0) {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -157,20 +163,29 @@ export default function ClienteDashboard() {
     setLoading(false)
   }
 
+  // BUSCA CORRIGIDA DE PROFISSIONAIS
   async function buscarProfissionais(categoria: string) {
     setLoadingProfissionais(true)
     try {
       console.log('Buscando profissionais para:', categoria)
       
+      // Tenta buscar usando contains (array)
       const { data, error } = await supabase
         .from('professionals')
         .select('*')
         .eq('ativo', true)
         .contains('especialidade', [categoria])
 
-      if (error) throw error
+      if (error) {
+        console.error('Erro na busca:', error)
+        throw error
+      }
 
+      console.log('Profissionais encontrados:', data)
+
+      // Se não encontrou nada, tenta busca case-insensitive
       if (!data || data.length === 0) {
+        console.log('Tentando busca alternativa...')
         const { data: todos } = await supabase
           .from('professionals')
           .select('*')
@@ -183,10 +198,9 @@ export default function ClienteDashboard() {
           )
         })
         
-        console.log('Profissionais encontrados (filtro manual):', filtrados.map(p => ({id: p.id, nome: p.nome})))
+        console.log('Filtrados manualmente:', filtrados)
         setProfissionais(filtrados)
       } else {
-        console.log('Profissionais encontrados:', data.map(p => ({id: p.id, nome: p.nome})))
         setProfissionais(data)
       }
     } catch (error) {
@@ -209,6 +223,7 @@ export default function ClienteDashboard() {
       if (error) throw error
 
       if (data) {
+        // Busca nomes dos profissionais
         const profIds = data.map(c => c.professional_id)
         const { data: profs } = await supabase
           .from('professionals')
@@ -240,6 +255,7 @@ export default function ClienteDashboard() {
   async function abrirChat(profissional: Profissional) {
     if (!user?.id) return
 
+    // Verifica se já existe conversa
     const { data: existente } = await supabase
       .from('conversations')
       .select('*')
@@ -249,6 +265,7 @@ export default function ClienteDashboard() {
 
     let conversaId = existente?.id
 
+    // Se não existe, cria uma
     if (!existente) {
       const { data: nova, error } = await supabase
         .from('conversations')
@@ -270,6 +287,7 @@ export default function ClienteDashboard() {
       conversaId = nova.id
     }
 
+    // Busca mensagens históricas
     const { data: msgs } = await supabase
       .from('messages')
       .select('*')
@@ -287,12 +305,19 @@ export default function ClienteDashboard() {
     
     setMensagens(msgs || [])
     setChatAberto(true)
+    
+    // Marca como lida
     await supabase.from('conversations').update({ unread_client: false }).eq('id', conversaId)
+    
+    // Atualiza lista de conversas em background
     carregarConversas()
   }
 
+  // 🎯 ABRE CHAT A PARTIR DA LISTA DE CONVERSAS (já existente)
   async function abrirChatExistente(conversa: Conversa) {
     if (!user?.id) return
+
+    // Busca mensagens históricas
     const { data: msgs } = await supabase
       .from('messages')
       .select('*')
@@ -302,7 +327,11 @@ export default function ClienteDashboard() {
     setConversaSelecionada(conversa)
     setMensagens(msgs || [])
     setChatAberto(true)
+    
+    // Marca como lida
     await supabase.from('conversations').update({ unread_client: false }).eq('id', conversa.id)
+    
+    // Atualiza lista
     setConversas(prev => prev.map(c => 
       c.id === conversa.id ? { ...c, unread_client: false } : c
     ))
@@ -310,7 +339,10 @@ export default function ClienteDashboard() {
 
   async function enviarMensagem() {
     if (!novaMensagem.trim() || !conversaSelecionada || !user?.id) return
+
     const mensagemTemp = novaMensagem.trim()
+    
+    // Limpa input imediatamente para melhor UX
     setNovaMensagem('')
 
     const { error } = await supabase.from('messages').insert({
@@ -323,16 +355,19 @@ export default function ClienteDashboard() {
 
     if (error) {
       console.error('Erro:', error)
+      // Restaura mensagem se deu erro
       setNovaMensagem(mensagemTemp)
       return
     }
 
+    // Atualiza conversa com última mensagem
     await supabase.from('conversations').update({ 
       last_message: mensagemTemp,
       updated_at: new Date().toISOString(),
       unread_professional: true 
     }).eq('id', conversaSelecionada.id)
 
+    // Atualiza localmente
     setMensagens(prev => [...prev, {
       id: Date.now().toString(),
       sender_type: 'client',
@@ -340,19 +375,16 @@ export default function ClienteDashboard() {
       created_at: new Date().toISOString()
     }])
     
+    // Scroll imediato
     setTimeout(() => {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
     }, 50)
+    
+    // Atualiza lista de conversas em background
     carregarConversas()
   }
 
   function abrirModalAgendamento(prof: Profissional) {
-    // 🔍 DEBUG: Mostra exatamente qual ID está sendo usado
-    console.log('🔍 Abrindo modal para profissional:', {
-      nome: prof.nome,
-      id_tabela_professionals: prof.id,
-      email: prof.email
-    })
     setProfissionalAgendar(prof)
     setModalAgendamento(true)
     setDataAgendamento(new Date().toISOString().split('T')[0])
@@ -362,47 +394,30 @@ export default function ClienteDashboard() {
     e.preventDefault()
     if (!user?.id || !profissionalAgendar) return
 
-    // 🔍 DEBUG CRUCIAL
-    console.log('🔍 Dados do profissional selecionado:', profissionalAgendar)
-    console.log('🔍 ID que será salvo como profissional_id:', profissionalAgendar.id)
-    console.log('🔍 User ID do profissional (NÃO deve ser usado):', (profissionalAgendar as any).user_id)
-
     setSalvandoAgendamento(true)
-    
-    const dadosAgendamento = {
-      cliente_id: user.id,
-      profissional_id: profissionalAgendar.id, // Este deve ser o ID da tabela professionals!
-      data_agendamento: dataAgendamento,
-      hora_inicio: horaAgendamento,
-      hora_fim: calcularHoraFim(horaAgendamento, 60),
-      endereco: enderecoAgendamento || 'A combinar',
-      bairro: 'Centro',
-      cidade: profissionalAgendar.cidade || 'Porto Velho',
-      status: 'pendente',
-      valor_total: profissionalAgendar.preco_hora || 80,
-    }
-
-    console.log('🔍 Dados completos do agendamento:', dadosAgendamento)
-
     try {
-      const { data, error } = await supabase
-        .from('agendamentos')
-        .insert(dadosAgendamento)
-        .select()
+      const { error } = await supabase.from('agendamentos').insert({
+        cliente_id: user.id,
+        profissional_id: profissionalAgendar.id,
+        data_agendamento: dataAgendamento,
+        hora_inicio: horaAgendamento,
+        hora_fim: calcularHoraFim(horaAgendamento, 60),
+        endereco: enderecoAgendamento || 'A combinar',
+        bairro: 'Centro',
+        cidade: profissionalAgendar.cidade || 'Porto Velho',
+        status: 'pendente',
+        valor_total: profissionalAgendar.preco_hora || 80,
+        servico_id: 'servico-padrao'
+      })
 
-      if (error) {
-        console.error('❌ Erro detalhado do Supabase:', error)
-        alert(`❌ Erro: ${error.message}`)
-        throw error
-      }
+      if (error) throw error
       
-      console.log('✅ Agendamento criado:', data)
       alert('✅ Agendamento solicitado! O profissional irá confirmar.')
       setModalAgendamento(false)
       setEnderecoAgendamento('')
-    } catch (error: any) {
-      console.error('❌ Erro completo:', error)
-      alert(`❌ Erro ao agendar: ${error?.message || 'Tente novamente'}`)
+    } catch (error) {
+      console.error('Erro:', error)
+      alert('❌ Erro ao agendar. Tente novamente.')
     } finally {
       setSalvandoAgendamento(false)
     }
@@ -432,6 +447,7 @@ export default function ClienteDashboard() {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* Header Desktop/Mobile */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-30">
         <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
           <div>
@@ -453,6 +469,7 @@ export default function ClienteDashboard() {
       </header>
 
       <div className="max-w-7xl mx-auto flex flex-col md:flex-row min-h-[calc(100vh-80px)]">
+        {/* Sidebar - Mobile: horizontal / Desktop: vertical lateral */}
         <aside className="w-full md:w-80 bg-white border-b md:border-b-0 md:border-r border-gray-200 flex flex-col">
           <div className="p-4 border-b border-gray-100">
             <div className="flex gap-2">
@@ -541,6 +558,7 @@ export default function ClienteDashboard() {
           </div>
         </aside>
 
+        {/* Main Content */}
         <main className="flex-1 p-4 md:p-6 overflow-y-auto bg-gray-50 w-full">
           {abaAtiva === 'servicos' ? (
             !categoriaSelecionada ? (
@@ -553,6 +571,7 @@ export default function ClienteDashboard() {
               </div>
             ) : (
               <div>
+                {/* Header da Categoria */}
                 <div className="flex items-center gap-4 mb-6">
                   <button 
                     onClick={() => setCategoriaSelecionada(null)}
@@ -575,6 +594,7 @@ export default function ClienteDashboard() {
                   )}
                 </div>
 
+                {/* Lista de Profissionais */}
                 {loadingProfissionais ? (
                   <div className="flex items-center justify-center py-12">
                     <Loader2 className="w-8 h-8 animate-spin text-purple-600" />
@@ -648,7 +668,8 @@ export default function ClienteDashboard() {
                                   className="px-3 py-1.5 md:px-4 md:py-2 bg-gradient-to-r from-purple-600 to-pink-500 text-white rounded-lg hover:opacity-90 font-medium text-xs md:text-sm flex items-center gap-1 md:gap-2"
                                 >
                                   <Calendar className="w-3 h-3 md:w-4 md:h-4" />
-                                  <span>Agendar</span>
+                                  <span className="hidden sm:inline">Agendar</span>
+                                  <span className="sm:hidden">Agendar</span>
                                 </button>
                               </div>
                             </div>
@@ -670,6 +691,7 @@ export default function ClienteDashboard() {
         </main>
       </div>
 
+      {/* Modal de Chat */}
       {chatAberto && conversaSelecionada && (
         <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/50 p-0 md:p-4">
           <div className="bg-white w-full md:max-w-lg md:h-[600px] h-[100vh] md:rounded-2xl shadow-2xl flex flex-col overflow-hidden">
@@ -717,7 +739,7 @@ export default function ClienteDashboard() {
                   onChange={(e) => setNovaMensagem(e.target.value)}
                   onKeyPress={(e) => e.key === 'Enter' && enviarMensagem()}
                   placeholder="Digite sua mensagem..."
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-full focus:outline-none focus:border-purple-500 text-base text-gray-900 bg-white placeholder:text-gray-400"
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-full focus:outline-none focus:border-purple-500 text-base"
                 />
                 <button 
                   onClick={enviarMensagem}
@@ -732,13 +754,14 @@ export default function ClienteDashboard() {
         </div>
       )}
 
+      {/* Modal de Agendamento */}
       {modalAgendamento && profissionalAgendar && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
             <div className="bg-gradient-to-r from-purple-600 to-pink-500 text-white px-6 py-4 flex items-center justify-between">
               <div>
                 <h3 className="font-bold text-lg">Agendar com {profissionalAgendar.nome}</h3>
-                <p className="text-sm opacity-90">ID: {profissionalAgendar.id?.slice(0,8)}...</p>
+                <p className="text-sm opacity-90">{categoriaAtual?.nome}</p>
               </div>
               <button onClick={() => setModalAgendamento(false)} className="p-2 hover:bg-white/20 rounded-full">
                 <X className="w-5 h-5" />
@@ -754,7 +777,7 @@ export default function ClienteDashboard() {
                   value={dataAgendamento}
                   onChange={(e) => setDataAgendamento(e.target.value)}
                   min={new Date().toISOString().split('T')[0]}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 text-gray-900 bg-white"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500"
                 />
               </div>
 
@@ -763,7 +786,7 @@ export default function ClienteDashboard() {
                 <select 
                   value={horaAgendamento}
                   onChange={(e) => setHoraAgendamento(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 text-gray-900 bg-white"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500"
                 >
                   {['08:00','09:00','10:00','11:00','13:00','14:00','15:00','16:00','17:00'].map(h => (
                     <option key={h} value={h}>{h}</option>
@@ -777,7 +800,7 @@ export default function ClienteDashboard() {
                   value={enderecoAgendamento}
                   onChange={(e) => setEnderecoAgendamento(e.target.value)}
                   placeholder="Seu endereço completo"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 h-20 resize-none text-gray-900 bg-white placeholder:text-gray-400"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 h-20 resize-none"
                 />
               </div>
 
@@ -790,7 +813,7 @@ export default function ClienteDashboard() {
                 <button 
                   type="button" 
                   onClick={() => setModalAgendamento(false)}
-                  className="flex-1 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700"
+                  className="flex-1 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
                 >
                   Cancelar
                 </button>
