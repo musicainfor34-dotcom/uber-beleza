@@ -24,7 +24,7 @@ import {
   Navigation,
   Clock
 } from 'lucide-react'
-import RastreamentoMapa from '@/app/components/RastreamentoMapa'
+import RastreamentoMapa from '../../components/RastreamentoMapa'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -103,7 +103,7 @@ export default function ClienteDashboard() {
   const [enderecoAgendamento, setEnderecoAgendamento] = useState('')
   const [salvandoAgendamento, setSalvandoAgendamento] = useState(false)
 
-  // Rastreamento GPS - ESTADOS NOVOS
+  // Rastreamento GPS
   const [meusAgendamentos, setMeusAgendamentos] = useState<Agendamento[]>([])
   const [agendamentoRastreando, setAgendamentoRastreando] = useState<Agendamento | null>(null)
 
@@ -117,7 +117,6 @@ export default function ClienteDashboard() {
     }
   }, [user, abaAtiva])
 
-  // Buscar agendamentos quando usuário logar
   useEffect(() => {
     if (user?.id) {
       fetchMeusAgendamentos()
@@ -130,7 +129,6 @@ export default function ClienteDashboard() {
     }
   }, [categoriaSelecionada])
 
-  // Subscription em tempo real para o chat
   useEffect(() => {
     if (chatAberto && conversaSelecionada?.id) {
       const channel = supabase
@@ -178,7 +176,6 @@ export default function ClienteDashboard() {
     setLoading(false)
   }
 
-  // FUNÇÃO NOVA: Buscar agendamentos do cliente
   async function fetchMeusAgendamentos() {
     if (!user?.id) return
     try {
@@ -852,7 +849,7 @@ export default function ClienteDashboard() {
         </main>
       </div>
 
-      {/* MODAL DE RASTREAMENTO - COMPONENTE INTEGRADO */}
+      {/* MODAL DE RASTREAMENTO */}
       {agendamentoRastreando && (
         <RastreamentoMapa 
           agendamentoId={agendamentoRastreando.id}
